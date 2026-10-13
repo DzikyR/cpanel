@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% from "_domain.html" import domain_picker %}{% block title %}Website{% endblock %}{% block content %}
+<div class="card"><h2>Tambah Website</h2>
+<form method="post" class="row" style="align-items:flex-start"><input type="hidden" name="csrf" value="{{ csrf }}">
+{{ domain_picker(zones) }}
+{% if cf_on %}<label><input type="checkbox" name="publish" value="1" {{ 'checked' if cf_auto }}> Publikasikan via Cloudflare</label>{% endif %}
+<button>+ Buat Website</button></form>
+{% if not cf_on %}<p class="muted">💡 Hubungkan <a href="/cloudflare">Cloudflare</a> agar website baru otomatis online.</p>{% endif %}
+{% if zones %}<p class="muted">Pilih domain aktif di Cloudflare, lalu isi subdomain (mis. <code>akre</code> → akre.{{ zones[0] }}) atau kosongkan untuk memakai domain utamanya. Bila domain sudah dipakai record DNS lain, website tidak dibuat agar tidak menimpa situs yang ada.</p>{% endif %}
+{% if cf_err %}<div class="flash error">Cloudflare: {{ cf_err }}</div>{% endif %}
+<p class="muted">Folder dibuat di <code>/var/www/&lt;domain&gt;/public_html</code>, vhost Nginx + PHP {{ php_ver }} otomatis. Untuk akses dari PC lain, tambahkan domain ke file <code>hosts</code> PC tersebut, mengarah ke IP server ini.</p></div>
+<div class="card"><h2>Daftar Website</h2><div class="table-wrap"><table>
+<tr><th>Domain</th><th>Status</th>{% if cf_on %}<th>Publik</th>{% endif %}<th>Document Root</th><th>Aksi</th></tr>
+{% for x in sites %}<tr>
+<td><a href="http://{{ x.domain }}" target="_blank">{{ x.domain }}</a></td>
+<td><span class="badge {{ 'on' if x.enabled else 'off' }}">{{ 'Aktif' if x.enabled else 'Nonaktif' }}</span></td>
+{% if cf_on %}<td>{% if x.domain in public %}<a href="https://{{ x.domain }}" target="_blank"><span class="badge on">🌍 Online</span></a>{% elif x.publishable %}<span class="badge off">Lokal</span>{% else %}<span class="badge off" title="Domain tidak ada di akun Cloudflare">Lokal saja</span>{% endif %}</td>{% endif %}
+<td>{% if x.git %}<a href="/files?p={{ x.domain }}/repo">⎇ <code>{{ x.git.repo.split('/')[-1] }}</code> ({{ x.git.branch }})</a>{% else %}<a href="/files?p={{ x.domain }}/public_html"><code>{{ x.root }}</code></a>{% endif %}</td>
+<td class="row">
+<form method="post" action="/sites/{{ x.domain }}/toggle" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-sm btn-gray">{{ 'Nonaktifkan' if x.enabled else 'Aktifkan' }}</button></form>
+<a class="btn btn-sm {{ 'btn-green' if x.git else 'btn-gray' }}" href="/sites/{{ x.domain }}/git">{{ '⎇ Git' if x.git else 'Hubungkan Git' }}</a>
+{% if cf_on and (x.publishable or x.domain in public) %}<form method="post" action="/sites/{{ x.domain }}/publish" class="inline" {% if x.domain in public %}onsubmit="return confirm('Cabut {{ x.domain }} dari publik?')"{% endif %}><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="undo" value="{{ '1' if x.domain in public else '0' }}"><button class="btn-sm {{ 'btn-gray' if x.domain in public else 'btn-green' }}">{{ 'Cabut Publik' if x.domain in public else 'Publikasikan' }}</button></form>{% endif %}
+<form method="post" action="/sites/{{ x.domain }}/delete" class="inline" onsubmit="this.files.value=confirm('Hapus juga semua file website dan database-nya?')?'1':'0';return confirm('Hapus website {{ x.domain }}?')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="files" value="0"><button class="btn-sm btn-red">Hapus</button></form>
+</td></tr>{% else %}<tr><td colspan="5" class="muted">Belum ada website.</td></tr>{% endfor %}
+</table></div></div>
+{% endblock %}

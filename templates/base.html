@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}LocalPanel{% endblock %} · LocalPanel</title>
+<style>
+:root{--bg:#f3f5f9;--card:#fff;--text:#1f2937;--muted:#6b7280;--line:#e5e7eb;--brand:#ff6c2c;--side:#1e2a3a;--ok:#16a34a;--err:#dc2626}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text)}
+a{color:#2563eb;text-decoration:none}a:hover{text-decoration:underline}
+.layout{display:flex;min-height:100vh}
+aside{width:220px;background:var(--side);color:#cbd5e1;flex-shrink:0}
+aside .logo{padding:18px 20px;font-size:20px;font-weight:700;color:#fff;border-bottom:1px solid #2c3b50}
+aside .logo span{color:var(--brand)}
+aside nav a{display:block;padding:11px 20px;color:#cbd5e1;border-left:3px solid transparent}
+aside nav a:hover,aside nav a.active{background:#26364b;color:#fff;text-decoration:none;border-left-color:var(--brand)}
+main{flex:1;padding:24px;min-width:0}
+header.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+h1{margin:0;font-size:22px}h2{font-size:16px;margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:18px;margin-bottom:18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:18px}
+.stat .v{font-size:26px;font-weight:700}.stat .l{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:8px}.bar i{display:block;height:100%;background:var(--brand)}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+th{font-size:12px;color:var(--muted);text-transform:uppercase}
+.table-wrap{overflow-x:auto}
+input,select,textarea{font:inherit;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:var(--text)}
+button,.btn{font:inherit;padding:8px 14px;border:0;border-radius:6px;background:var(--brand);color:#fff;cursor:pointer;display:inline-block}
+button:hover,.btn:hover{filter:brightness(.95);text-decoration:none}
+.btn-sm{padding:4px 10px;font-size:12px}.btn-gray{background:#64748b}.btn-red{background:var(--err)}.btn-green{background:var(--ok)}
+form.inline{display:inline}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.flash{padding:10px 14px;border-radius:6px;margin-bottom:14px;word-break:break-word}
+.flash.ok{background:#dcfce7;color:#166534}.flash.error{background:#fee2e2;color:#991b1b}
+.badge{padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600}
+.badge.active,.badge.on{background:#dcfce7;color:#166534}.badge.off,.badge.inactive,.badge.failed{background:#fee2e2;color:#991b1b}
+.muted{color:var(--muted)}
+.apps{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.app{border:2px solid var(--line);border-radius:8px;padding:12px;cursor:pointer;display:block}
+.app:has(input:checked){border-color:var(--brand);background:#fff7f2}
+.app input{display:none}.app b{display:block;font-size:15px}
+.form td{border:0;padding:6px 10px}
+pre{background:#0f172a;color:#e2e8f0;padding:14px;border-radius:6px;overflow:auto;max-height:70vh;font-size:12px}
+@media(max-width:760px){.layout{flex-direction:column}aside{width:100%}aside nav{display:flex;overflow-x:auto}aside nav a{white-space:nowrap;border-left:0;border-bottom:3px solid transparent}main{padding:16px}}
+</style></head><body>
+<div class="layout">
+<aside><div class="logo">Local<span>Panel</span></div>
+<nav>
+{% set ep = request.endpoint or '' %}
+<a href="/" class="{{ 'active' if ep=='dashboard' }}">🏠 Dashboard</a>
+<a href="/sites" class="{{ 'active' if ep.startswith('site') }}">🌐 Website</a>
+<a href="/apps" class="{{ 'active' if ep.startswith('app') }}">🧩 Aplikasi</a>
+<a href="/backups" class="{{ 'active' if ep.startswith('backup') }}">💾 Backup</a>
+<a href="/databases" class="{{ 'active' if ep.startswith('db') or ep=='databases' }}">🗄️ Database</a>
+<a href="/files" class="{{ 'active' if ep.startswith('files') }}">📁 File Manager</a>
+<a href="/cloudflare" class="{{ 'active' if ep=='cloudflare' }}">☁️ Cloudflare</a>
+<a href="/services" class="{{ 'active' if ep=='services' }}">⚙️ Services</a>
+<a href="/logs" class="{{ 'active' if ep=='logs' }}">📜 Logs</a>
+<a href="/password" class="{{ 'active' if ep=='password' }}">🔑 Ganti Password</a>
+<a href="/logout">🚪 Logout</a>
+</nav></aside>
+<main>
+<header class="top"><h1>{{ self.title() }}</h1><span class="muted">👤 {{ user }}</span></header>
+{% for cat, msg in get_flashed_messages(with_categories=true) %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+{% block content %}{% endblock %}
+</main></div></body></html>

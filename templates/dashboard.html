@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% block title %}Dashboard{% endblock %}{% block content %}
+<div class="grid">
+<div class="card stat"><div class="l">CPU ({{ s.cores }} core)</div><div class="v">{{ s.cpu }}%</div><div class="bar"><i style="width:{{ s.cpu }}%"></i></div></div>
+<div class="card stat"><div class="l">RAM</div><div class="v">{{ s.mem.percent }}%</div><div class="muted">{{ (s.mem.total-s.mem.available)|size }} / {{ s.mem.total|size }}</div><div class="bar"><i style="width:{{ s.mem.percent }}%"></i></div></div>
+<div class="card stat"><div class="l">Disk /</div><div class="v">{{ s.disk.percent }}%</div><div class="muted">{{ s.disk.used|size }} / {{ s.disk.total|size }}</div><div class="bar"><i style="width:{{ s.disk.percent }}%"></i></div></div>
+<div class="card stat"><div class="l">Website</div><div class="v">{{ sites }}</div><a href="/sites">Kelola →</a></div>
+</div>
+<div class="grid">
+<div class="card"><h2>Info Server</h2><table>
+<tr><td class="muted">Hostname</td><td>{{ s.hostname }}</td></tr>
+<tr><td class="muted">IP</td><td>{{ s.ips|join(', ') }}</td></tr>
+<tr><td class="muted">Uptime</td><td>{{ s.uptime//86400 }} hari {{ (s.uptime%86400)//3600 }} jam {{ (s.uptime%3600)//60 }} menit</td></tr>
+<tr><td class="muted">Load</td><td>{{ '%.2f / %.2f / %.2f'|format(*s.load) }}</td></tr></table></div>
+<div class="card"><h2>Status Service</h2><table>
+{% for k,v in svc.items() %}<tr><td>{{ k }}</td><td><span class="badge {{ v }}">{{ v }}</span></td></tr>{% endfor %}
+</table></div></div>
+{% endblock %}

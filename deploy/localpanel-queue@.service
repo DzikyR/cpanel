@@ -1,0 +1,14 @@
+[Unit]
+Description=Laravel queue worker untuk %i (LocalPanel)
+After=network.target mariadb.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/%i/repo
+ExecStart=/usr/bin/php artisan queue:work --sleep=3 --tries=3 --max-time=3600 --memory=256
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

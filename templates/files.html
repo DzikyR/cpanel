@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block title %}File Manager{% endblock %}{% block content %}
+<div class="card">
+<div style="margin-bottom:12px"><a href="/files">/var/www</a>{% for name,path in crumbs %} / <a href="/files?p={{ path|urlencode }}">{{ name }}</a>{% endfor %}</div>
+<div class="row" style="margin-bottom:12px">
+<form method="post" action="/files/action" enctype="multipart/form-data" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="p" value="{{ rel }}"><input type="hidden" name="action" value="upload"><input type="file" name="files" multiple required><button class="btn-sm">⬆ Upload</button></form>
+<form method="post" action="/files/action" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="p" value="{{ rel }}"><input type="hidden" name="action" value="mkdir"><input name="name" placeholder="folder baru" required><button class="btn-sm btn-gray">+ Folder</button></form>
+<form method="post" action="/files/action" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="p" value="{{ rel }}"><input type="hidden" name="action" value="mkfile"><input name="name" placeholder="file baru" required><button class="btn-sm btn-gray">+ File</button></form>
+</div>
+<div class="table-wrap"><table><tr><th>Nama</th><th>Ukuran</th><th>Diubah</th><th>Aksi</th></tr>
+{% if parent is not none %}<tr><td colspan="4"><a href="/files?p={{ parent|urlencode }}">⬆ ..</a></td></tr>{% endif %}
+{% for i in items %}<tr>
+<td>{% if i.dir %}📁 <a href="/files?p={{ i.rel|urlencode }}">{{ i.name }}</a>{% else %}📄 {{ i.name }}{% endif %}</td>
+<td>{{ '' if i.dir else i.size|size }}</td><td class="muted">{{ i.mtime }}</td>
+<td class="row">
+{% if not i.dir %}<a class="btn btn-sm btn-gray" href="/files/edit?p={{ i.rel|urlencode }}">Edit</a><a class="btn btn-sm btn-gray" href="/files?p={{ i.rel|urlencode }}">Unduh</a>{% endif %}
+{% if i.name.endswith('.zip') %}<form method="post" action="/files/action" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="p" value="{{ rel }}"><input type="hidden" name="action" value="unzip"><input type="hidden" name="target" value="{{ i.rel }}"><button class="btn-sm btn-green">Ekstrak</button></form>{% endif %}
+<form method="post" action="/files/action" class="inline" onsubmit="var n=prompt('Nama baru:','{{ i.name }}');if(!n)return false;this.name.value=n"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="p" value="{{ rel }}"><input type="hidden" name="action" value="rename"><input type="hidden" name="target" value="{{ i.rel }}"><input type="hidden" name="name"><button class="btn-sm btn-gray">Rename</button></form>
+<form method="post" action="/files/action" class="inline" onsubmit="return confirm('Hapus {{ i.name }}?')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="p" value="{{ rel }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="target" value="{{ i.rel }}"><button class="btn-sm btn-red">Hapus</button></form>
+</td></tr>{% else %}<tr><td colspan="4" class="muted">Folder kosong.</td></tr>{% endfor %}
+</table></div></div>
+{% endblock %}

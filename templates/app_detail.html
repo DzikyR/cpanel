@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}{{ recipe.name }} · {{ domain }}{% endblock %}{% block content %}
+<p><a href="/apps">← Aplikasi</a></p>
+<div class="card"><h2>{{ recipe.icon }} {{ recipe.name }} {{ a.version or '' }}</h2>
+<table class="form">
+<tr><td class="muted" style="width:170px">Status</td><td>{% if running %}⏳ Sedang memasang… <a href="">refresh</a>{% elif a.status == 'ok' %}<span class="badge on">terpasang</span> {{ a.finished }}{% else %}<span class="badge off">gagal</span> — lihat log di bawah{% endif %}</td></tr>
+<tr><td class="muted">Website</td><td><a href="{{ url }}" target="_blank">{{ url }}</a></td></tr>
+{% if a.admin_url %}<tr><td class="muted">Halaman admin</td><td><a href="{{ a.admin_url }}" target="_blank">{{ a.admin_url }}</a></td></tr>{% endif %}
+{% if a.admin %}<tr><td class="muted">Login admin</td><td><code>{{ a.admin.user }}</code> · {{ a.admin.email }}</td></tr>
+<tr><td class="muted">Password admin</td><td><details><summary>tampilkan</summary><code>{{ a.admin.password }}</code></details><div class="muted">Password awal. Bila diganti di aplikasi, nilai ini tidak ikut berubah.</div></td></tr>{% endif %}
+{% if a.db %}<tr><td class="muted">Database</td><td><code>{{ a.db.name }}</code> · user <code>{{ a.db.user }}</code> · <details style="display:inline"><summary>password</summary><code>{{ a.db.password }}</code></details></td></tr>{% endif %}
+{% if a.root %}<tr><td class="muted">Document root</td><td><a href="/files?p={{ a.root[9:] }}"><code>{{ a.root }}</code></a></td></tr>{% endif %}
+</table>
+<p class="row"><a class="btn btn-sm btn-gray" href="/backups">💾 Backup</a>
+<form method="post" class="inline" onsubmit="return confirm('Lepas aplikasi dari panel? File & database TIDAK dihapus.')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="forget"><button class="btn-sm btn-red">Lepas dari panel</button></form></p>
+<p class="muted">Untuk menghapus total (file + database), hapus website {{ domain }} di menu Website.</p></div>
+<div class="card"><h2>Log instalasi</h2><pre id="log">{{ log or 'Belum ada log.' }}</pre></div>
+{% if running %}<script>setTimeout(function(){location.reload()},4000);var l=document.getElementById('log');l.scrollTop=l.scrollHeight;</script>{% endif %}
+{% endblock %}

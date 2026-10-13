@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block title %}Services{% endblock %}{% block content %}
+<div class="card"><div class="table-wrap"><table><tr><th>Service</th><th>Status</th><th>Autostart</th><th>Aksi</th></tr>
+{% for s in svc %}<tr><td>{{ s.name }}</td><td><span class="badge {{ s.state }}">{{ s.state }}</span></td><td>{{ s.enabled }}</td>
+<td><form method="post" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="service" value="{{ s.name }}">
+<button name="action" value="start" class="btn-sm btn-green">Start</button>
+<button name="action" value="restart" class="btn-sm btn-gray">Restart</button>
+{% if s.name != 'ssh' %}<button name="action" value="stop" class="btn-sm btn-red" onclick="return confirm('Stop {{ s.name }}?')">Stop</button>{% endif %}
+</form></td></tr>{% endfor %}</table></div></div>
+{% endblock %}

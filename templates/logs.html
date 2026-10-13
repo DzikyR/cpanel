@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block title %}Logs{% endblock %}{% block content %}
+<div class="card"><form class="row" style="margin-bottom:12px"><select name="f" onchange="this.form.submit()">
+{% for l in logfiles %}<option {{ 'selected' if l==sel }}>{{ l }}</option>{% endfor %}</select><button class="btn-sm btn-gray">Refresh</button></form>
+<pre>{{ content or '(kosong)' }}</pre><p class="muted">200 baris terakhir</p></div>
+{% endblock %}

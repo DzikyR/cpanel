@@ -1,0 +1,28 @@
+{# Pemilih domain: subdomain + domain aktif di Cloudflare, atau ketik domain lain secara manual. #}
+{% macro domain_picker(zones, datalist=None, placeholder="contoh: tokoku.test") %}
+<div class="dpick">
+{% if zones %}
+<div class="row dz">
+<input name="sub" placeholder="subdomain (opsional)" pattern="[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?" title="huruf, angka, titik, strip" style="width:200px">
+<span class="muted">.</span>
+<select name="zone">{% for z in zones %}<option value="{{ z }}">{{ z }}</option>{% endfor %}<option value="">✏️ domain lain…</option></select>
+</div>
+{% endif %}
+<input name="domain" class="dm" {% if datalist %}list="{{ datalist }}"{% endif %} placeholder="{{ placeholder }}" style="min-width:300px;{{ 'display:none;margin-top:6px' if zones }}" {{ 'required' if not zones }}>
+<div class="muted dprev"></div>
+</div>
+<script>
+(function(){
+  var box=document.currentScript.previousElementSibling, sub=box.querySelector('[name=sub]'),
+      zone=box.querySelector('[name=zone]'), dm=box.querySelector('.dm'), prev=box.querySelector('.dprev');
+  if(!zone) return;
+  function sync(){
+    var manual=zone.value==='';
+    dm.style.display=manual?'':'none'; dm.required=manual; sub.disabled=manual;
+    var s=sub.value.trim().toLowerCase().replace(/^\.+|\.+$/g,'');
+    prev.innerHTML=manual?'':'→ <b>'+(s?s+'.':'')+zone.value+'</b>'+(s?'':' (domain utama)');
+  }
+  sub.addEventListener('input',sync); zone.addEventListener('change',sync); sync();
+})();
+</script>
+{% endmacro %}

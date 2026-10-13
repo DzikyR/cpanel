@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% block title %}Backup & Restore{% endblock %}{% block content %}
+<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Backup per Website</h2>
+<form method="post" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="backup_all"><button class="btn-sm" {{ 'disabled' if any_running }}>💾 Backup semua website</button></form></div>
+<p class="muted">Satu berkas <code>.tar.gz</code> berisi file website, database, dan pengaturan panel (Git, aplikasi, queue, cron). Disimpan di <code>/var/backups/localpanel/&lt;domain&gt;/</code>. Backup otomatis berjalan tiap hari pukul 02:30.</p>
+{% if any_running %}<p>⏳ Backup sedang berjalan… <a href="">refresh</a></p>{% endif %}
+<div class="table-wrap"><table>
+<tr><th>Website</th><th>Database</th><th>Backup terakhir</th><th>Jadwal otomatis</th><th>Aksi</th></tr>
+{% for r in rows %}<tr>
+<td><b>{{ r.domain }}</b></td>
+<td class="muted">{{ r.dbs|join(', ') or '-' }}</td>
+<td>{% if r.files %}{{ r.files[0].time|int|datetime }} <span class="muted">({{ r.files[0].size|size }}, {{ r.files|length }} berkas)</span>{% else %}<span class="muted">belum ada</span>{% endif %}</td>
+<td><form method="post" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="schedule"><input type="hidden" name="domain" value="{{ r.domain }}">
+<select name="freq"><option value="off">Mati</option><option value="daily" {{ 'selected' if r.schedule and r.schedule.freq=='daily' }}>Harian</option><option value="weekly" {{ 'selected' if r.schedule and r.schedule.freq=='weekly' }}>Mingguan</option></select>
+simpan <input name="keep" type="number" min="1" max="60" value="{{ r.schedule.keep if r.schedule else 7 }}" style="width:60px"> <button class="btn-sm btn-gray">Simpan</button></form></td>
+<td><form method="post" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="backup"><input type="hidden" name="domain" value="{{ r.domain }}"><button class="btn-sm btn-green" {{ 'disabled' if r.running }}>{{ '⏳' if r.running else 'Backup sekarang' }}</button></form></td>
+</tr>
+{% if r.files %}<tr><td colspan="5" style="padding-top:0"><details><summary class="muted">Daftar backup {{ r.domain }}</summary><table>
+{% for f in r.files %}<tr><td><code>{{ f.name }}</code></td><td>{{ f.size|size }}</td><td class="row">
+<a class="btn btn-sm btn-gray" href="/backups/{{ f.domain }}/{{ f.name }}">⬇ Unduh</a>
+<form method="post" action="/backups/restore" class="inline" onsubmit="return confirm('Restore {{ f.name }}? Website {{ r.domain }} saat ini (file & database) akan DIGANTI isi backup.')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="domain" value="{{ f.domain }}"><input type="hidden" name="name" value="{{ f.name }}"><input type="hidden" name="overwrite" value="1"><button class="btn-sm" {{ 'disabled' if restoring }}>↺ Restore</button></form>
+<form method="post" class="inline" onsubmit="return confirm('Hapus backup ini?')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="domain" value="{{ f.domain }}"><input type="hidden" name="name" value="{{ f.name }}"><button class="btn-sm btn-red">Hapus</button></form>
+</td></tr>{% endfor %}</table></details></td></tr>{% endif %}
+{% else %}<tr><td colspan="5" class="muted">Belum ada website.</td></tr>{% endfor %}
+</table></div></div>
+
+<div class="card" id="restore"><h2>Restore / Pindah Server</h2>
+<p class="muted">Unggah berkas backup LocalPanel dari server lain, atau pilih backup dari website yang sudah dihapus. Domain tujuan boleh berbeda: nama database, path, dan URL di konfigurasi (.env, wp-config.php, config.inc.php, config.php, configuration.php, database.php) disesuaikan otomatis.</p>
+<form method="post" action="/backups/restore" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
+<table class="form">
+<tr><td class="muted" style="width:170px">Berkas backup</td><td><input type="file" name="file" accept=".gz">
+{% if orphans %}<div class="muted" style="margin-top:6px">atau dari server ini:
+<select name="pick" onchange="var v=this.value.split('|');this.form.domain.value=v[0]||'';this.form.name.value=v[1]||''"><option value="">—</option>{% for b in orphans %}<option value="{{ b.domain }}|{{ b.name }}">{{ b.name }} ({{ b.size|size }})</option>{% endfor %}</select></div>{% endif %}
+<input type="hidden" name="domain"><input type="hidden" name="name">
+<div class="muted">Berkas &gt; 100 MB lewat Cloudflare bisa gagal; salin dulu ke <code>/var/backups/localpanel/&lt;domain&gt;/</code> (scp/SFTP), lalu pilih dari daftar.</div></td></tr>
+<tr><td class="muted">Domain tujuan</td><td><input name="target" placeholder="kosongkan = sama seperti backup" style="min-width:300px"></td></tr>
+<tr><td></td><td><label><input type="checkbox" name="overwrite" value="1"> Timpa bila website tujuan sudah ada</label>
+{% if cf_on %}<br><label><input type="checkbox" name="publish" value="1"> Publikasikan via Cloudflare</label>{% endif %}</td></tr>
+</table>
+<p><button {{ 'disabled' if restoring }}>↺ Restore</button></p></form>
+{% if restoring %}<p>⏳ Restore sedang berjalan… <a href="#restore" onclick="location.reload()">refresh</a></p>{% endif %}
+{% if restore_log %}<pre>{{ restore_log }}</pre>{% endif %}</div>
+{% if restoring or any_running %}<script>setTimeout(function(){location.reload()},5000)</script>{% endif %}
+{% endblock %}

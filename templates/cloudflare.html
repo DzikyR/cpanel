@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block title %}Cloudflare Tunnel{% endblock %}{% block content %}
+<div class="card"><h2>Koneksi</h2><table>
+<tr><td class="muted">Account ID</td><td><code>{{ account_id or 'tidak ditemukan' }}</code></td></tr>
+<tr><td class="muted">Tunnel ID</td><td><code>{{ tunnel_id or 'tidak ditemukan' }}</code></td></tr>
+<tr><td class="muted">API Token</td><td>{% if enabled %}<span class="badge on">Terhubung</span>{% else %}<span class="badge off">Belum diatur</span>{% endif %}</td></tr>
+{% if zones %}<tr><td class="muted">Domain</td><td>{{ zones|join(', ') }}</td></tr>{% endif %}
+</table>{% if err %}<div class="flash error" style="margin-top:12px">{{ err }}</div>{% endif %}</div>
+
+<div class="card"><h2>{{ 'Ganti' if enabled else 'Atur' }} API Token</h2>
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="save">
+<p><input type="password" name="token" placeholder="{{ 'Kosongkan jika tidak ingin mengganti' if enabled else 'Tempel API Token di sini' }}" style="width:100%;max-width:480px" autocomplete="off"></p>
+<p><label><input type="checkbox" name="auto" value="1" {{ 'checked' if auto }}> Centang "Publikasikan" secara default saat membuat website</label></p>
+<button>Simpan &amp; Verifikasi</button></form>
+{% if enabled %}<form method="post" style="margin-top:10px" onsubmit="return confirm('Hapus token?')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="remove"><button class="btn-sm btn-red">Putuskan</button></form>{% endif %}
+<details style="margin-top:14px"><summary>Cara membuat API Token</summary><ol>
+<li>Buka <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank">dash.cloudflare.com → My Profile → API Tokens</a> → <b>Create Token</b> → <b>Create Custom Token</b>.</li>
+<li>Permissions:<ul><li>Account · <b>Cloudflare Tunnel</b> · Edit</li><li>Zone · <b>Zone</b> · Read</li><li>Zone · <b>DNS</b> · Edit</li></ul></li>
+<li>Zone Resources: <b>Include · All zones</b> (agar domain baru otomatis terjangkau).</li>
+<li>Create Token, salin, lalu tempel di atas.</li></ol></details></div>
+
+{% if hosts %}<div class="card"><h2>Rute Tunnel Saat Ini</h2><div class="table-wrap"><table><tr><th>Hostname</th><th>Tujuan</th></tr>
+{% for h,svc in hosts.items() %}<tr><td>{{ h }}</td><td><code>{{ svc }}</code></td></tr>{% endfor %}</table></div>
+<p class="muted">Rute yang tidak dibuat dari panel (misal cpanel, sshcpanel) tidak akan diubah.</p></div>{% endif %}
+{% endblock %}

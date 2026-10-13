@@ -1,0 +1,10 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Login · LocalPanel</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#1e2a3a;font:14px system-ui,sans-serif}
+.box{background:#fff;padding:32px;border-radius:10px;width:min(340px,92vw)}h1{margin:0 0 20px;text-align:center}h1 span{color:#ff6c2c}
+input{width:100%;padding:10px;margin-bottom:12px;border:1px solid #cbd5e1;border-radius:6px;font:inherit}
+button{width:100%;padding:10px;border:0;border-radius:6px;background:#ff6c2c;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+.err{background:#fee2e2;color:#991b1b;padding:8px;border-radius:6px;margin-bottom:12px}</style></head><body>
+<form class="box" method="post"><h1>Local<span>Panel</span></h1>
+{% for c,m in get_flashed_messages(with_categories=true) %}<div class="err">{{ m }}</div>{% endfor %}
+<input name="username" placeholder="Username" required autofocus><input name="password" type="password" placeholder="Password" required>
+<button>Masuk</button></form></body></html>

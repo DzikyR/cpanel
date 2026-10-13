@@ -1,0 +1,94 @@
+{% extends "base.html" %}{% block title %}Git Deploy · {{ domain }}{% endblock %}{% block content %}
+<p><a href="/sites">← Website</a></p>
+<div class="card"><h2>Repository</h2>
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="save">
+<table>
+<tr><td class="muted" style="width:170px">URL Repo</td><td><input name="repo" value="{{ g.repo if g }}" placeholder="https://github.com/user/repo.git" required style="width:100%"><div class="muted">Repo publik: pakai URL <code>https://</code>. Repo privat: pakai URL SSH <code>git@github.com:user/repo.git</code> + Deploy Key di bawah.</div></td></tr>
+<tr><td class="muted">Branch</td><td><input name="branch" value="{{ g.branch if g else 'main' }}"></td></tr>
+<tr><td class="muted">Folder publik</td><td><input name="subdir" value="{{ g.subdir if g }}" placeholder="(kosong = root repo)"><div class="muted">Contoh: <code>public</code> untuk Laravel, <code>dist</code> / <code>build</code> untuk hasil build.
+Repo yang hanya berisi paket <code>.zip</code> aplikasi otomatis diekstrak; folder publik dihitung dari isi ZIP.</div></td></tr>
+<tr><td class="muted">Perintah setelah deploy</td><td><textarea name="post_cmd" rows="3" style="width:100%;font-family:ui-monospace,monospace" placeholder="opsional, contoh: composer install --no-dev">{{ g.post_cmd if g }}</textarea><div class="muted">Dijalankan di folder repo. Jika repo punya <code>.env.example</code> dan belum ada <code>.env</code>, database + <code>.env</code> dibuat otomatis. Kosongkan untuk website HTML/PHP biasa.
+<button type="button" class="btn-sm btn-gray" onclick="laravelPreset()">Isi preset Laravel</button></div></td></tr>
+</table>
+{% if g %}<p><label><input type="checkbox" name="deploy_now" value="1"> Langsung deploy setelah simpan</label></p>{% endif %}
+<button>{{ 'Simpan' if g else 'Hubungkan & Deploy' }}</button></form></div>
+
+{% if g %}
+<div class="card"><h2>Deploy</h2>
+<div class="row"><form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="deploy"><button class="btn-green" {{ 'disabled' if running }}>🚀 Deploy Sekarang</button></form>
+<span class="muted">{% if running %}⏳ Sedang berjalan… <a href="">refresh</a>{% elif g.last %}Terakhir: {{ g.last.time }} — {{ '✅ berhasil' if g.last.ok else '❌ gagal' }}{% endif %}</span></div>
+<p class="muted">Deploy menarik commit terbaru (<code>git fetch</code> + <code>reset --hard</code>). Perubahan file langsung di server dalam folder repo akan tertimpa.</p>
+{% if log %}<pre>{{ log }}</pre>{% endif %}</div>
+
+{% if g.db %}<div class="card"><h2>Database</h2>
+<p class="muted">Dibuat otomatis saat deploy pertama dan sudah diisi ke <code>repo/.env</code>.</p>
+<table>
+<tr><td class="muted" style="width:170px">Host</td><td><code>127.0.0.1:3306</code></td></tr>
+<tr><td class="muted">Database</td><td><code>{{ g.db.name }}</code></td></tr>
+<tr><td class="muted">User</td><td><code>{{ g.db.user }}</code></td></tr>
+<tr><td class="muted">Password</td><td><details><summary>tampilkan</summary><code>{{ g.db.password }}</code></details></td></tr>
+</table>
+<p class="muted">Saat deploy pertama, file SQL di repo (<code>database/*.sql</code> atau <code>*.sql</code> di root) otomatis diimport.</p>
+{% if dump %}<form method="post" onsubmit="return confirm('Import {{ dump.name }}? Tabel yang sama di database akan DITIMPA (backup dibuat otomatis).')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="import_sql">
+<button class="btn-sm btn-gray">Import database dari repo ({{ dump.name }})</button></form>{% endif %}
+</div>{% endif %}
+
+{% if lv and lv.artisan %}<div class="card" id="laravel"><h2>Laravel: Queue &amp; Scheduler</h2>
+<div class="table-wrap"><table><tr><th>Fitur</th><th>Status</th><th>Aksi</th></tr>
+<tr><td><b>Queue worker</b><div class="muted">php artisan queue:work, otomatis restart setelah deploy</div></td>
+<td>{% if lv.queue %}<span class="badge {{ lv.queue_state }}">{{ lv.queue_state }}</span>{% else %}<span class="badge off">nonaktif</span>{% endif %}</td>
+<td class="row"><form method="post" action="/sites/{{ domain }}/laravel" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="what" value="queue">
+{% if lv.queue %}<button name="action" value="restart" class="btn-sm btn-gray">Restart</button> <button name="action" value="off" class="btn-sm btn-red">Matikan</button>
+{% else %}<button name="action" value="on" class="btn-sm btn-green">Aktifkan</button>{% endif %}</form></td></tr>
+<tr><td><b>Scheduler</b><div class="muted">php artisan schedule:run setiap menit (cron)</div></td>
+<td>{% if lv.schedule %}<span class="badge on">aktif</span>{% else %}<span class="badge off">nonaktif</span>{% endif %}</td>
+<td><form method="post" action="/sites/{{ domain }}/laravel" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="what" value="schedule">
+{% if lv.schedule %}<button name="action" value="off" class="btn-sm btn-red">Matikan</button>{% else %}<button name="action" value="on" class="btn-sm btn-green">Aktifkan</button>{% endif %}</form></td></tr>
+</table></div>
+<p class="muted">Pastikan <code>QUEUE_CONNECTION=database</code> (atau redis) di <code>.env</code>. Worker berjalan sebagai www-data.</p>
+{% if qlog %}<details><summary>Log queue worker (30 baris terakhir)</summary><pre>{{ qlog }}</pre></details>{% endif %}
+</div>{% endif %}
+
+<div class="card"><h2>Auto Deploy (Webhook GitHub)</h2>
+<p>Di GitHub: repo → <b>Settings → Webhooks → Add webhook</b>:</p>
+<table>
+<tr><td class="muted" style="width:170px">Payload URL</td><td><code>{{ hook }}</code></td></tr>
+<tr><td class="muted">Content type</td><td><code>application/json</code></td></tr>
+<tr><td class="muted">Secret</td><td><code>{{ g.secret }}</code></td></tr>
+<tr><td class="muted">Event</td><td>Just the push event</td></tr></table>
+<p class="muted">Setiap push ke branch <b>{{ g.branch }}</b> otomatis ter-deploy. Jika panel dilindungi Cloudflare Access, buat aturan <b>Bypass</b> untuk path <code>/hook/*</code>.</p>
+<form method="post" onsubmit="return confirm('Buat secret baru? Webhook lama berhenti bekerja.')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="secret"><button class="btn-sm btn-gray">Buat ulang secret</button></form></div>
+{% endif %}
+
+<div class="card"><h2>Deploy Key (untuk repo privat)</h2>
+<p>Di GitHub: repo → <b>Settings → Deploy keys → Add deploy key</b>, tempel key ini (cukup read-only):</p>
+<pre style="white-space:pre-wrap;word-break:break-all">{{ pubkey }}</pre></div>
+
+{% if g %}<div class="card"><h2>Putuskan Git</h2>
+<form method="post" onsubmit="return confirm('Putuskan Git dari {{ domain }}?')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="disconnect">
+<label><input type="checkbox" name="delete_repo" value="1"> Hapus juga folder repo</label> <button class="btn-sm btn-red">Putuskan</button></form>
+<p class="muted">Website kembali memakai folder public_html.</p></div>{% endif %}
+<script>
+function laravelPreset(){
+  var f=document.querySelector('form [name=post_cmd]').form;
+  f.subdir.value='public';
+  f.post_cmd.value=[
+    'set -e',
+    '# paket yang sudah membawa vendor/ tanpa composer.lock tidak perlu composer install',
+    'if [ -f composer.lock ] || [ ! -d vendor ]; then composer install --no-dev --optimize-autoloader; fi',
+    '# .env + database dibuat otomatis oleh LocalPanel saat deploy pertama',
+    'if [ -f package.json ]; then',
+    '  if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi',
+    '  npm run build',
+    'fi',
+    'php artisan migrate --force',
+    '# deploy pertama (database baru): isi data awal dari seeder',
+    'if [ "$LP_NEW_DB" = 1 ]; then',
+    '  if [ -f database/seeders/AdminSeeder.php ]; then php artisan db:seed --class=AdminSeeder --force; else php artisan db:seed --force; fi',
+    'fi',
+    'php artisan storage:link || true',
+    'php artisan optimize'
+  ].join('\n');
+}
+</script>
+{% endblock %}

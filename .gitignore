@@ -1,0 +1,11 @@
+# Rahasia & data milik server ini — JANGAN di-commit
+config.json
+keys/
+db-backups/
+deploy-logs/
+# unduhan yang bisa dibuat ulang
+cache/
+bin/
+__pycache__/
+*.pyc
+*.bak

@@ -1,0 +1,12 @@
+[Unit]
+Description=LocalPanel - web hosting control panel
+After=network.target mariadb.service nginx.service
+
+[Service]
+ExecStart=/usr/bin/python3 __DIR__/app.py
+WorkingDirectory=__DIR__
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
