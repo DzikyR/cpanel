@@ -96,8 +96,11 @@
 <li>Menu <a href="/node">Node.js</a> → <b>Buat Aplikasi Node.js</b>: pilih domain, versi Node, dan folder aplikasi (bawaan <code>nodeapp</code>).</li>
 <li>Pilih <b>Database</b> bila perlu (PostgreSQL dan/atau MySQL); kredensialnya otomatis masuk ke environment.</li>
 <li>Klik <b>🟢 Buat Aplikasi</b>. Bila folder kosong, panel membuat contoh <code>server.js</code>.</li>
-<li>Unggah kode Anda ke <code>/var/www/&lt;domain&gt;/nodeapp</code> lewat File Manager (ZIP → Ekstrak) <b>tanpa</b> folder <code>node_modules</code>, atau isi folder <code>repo</code> lewat Git Deploy.</li>
-<li>Di halaman aplikasi, klik <b>npm install</b> (atau <b>npm install + build</b>). Aplikasi otomatis di-restart.</li>
+<li><b>Sumber kode</b>:
+<ul><li><b>⎇ GitHub</b> (disarankan): isi URL repo &amp; branch. Kode ditarik, lalu npm install + build + start otomatis. Repo privat: pakai URL SSH <code>git@github.com:user/repo.git</code>, salin <b>Deploy Key</b> di halaman aplikasi ke GitHub (repo → Settings → Deploy keys), lalu klik <b>🚀 Deploy Sekarang</b>.</li>
+<li><b>📁 Unggah manual</b>: unggah kode ke <code>/var/www/&lt;domain&gt;/nodeapp</code> lewat File Manager (ZIP → Ekstrak) <b>tanpa</b> folder <code>node_modules</code>.</li></ul>
+Aplikasi yang sudah ada bisa dihubungkan ke GitHub kapan saja dari kartu <b>⎇ GitHub</b> di halaman aplikasinya.</li>
+<li>Unggah manual: di halaman aplikasi klik <b>npm install</b> (atau <b>npm install + build</b>). Aplikasi otomatis di-restart. Dengan GitHub, langkah ini otomatis setiap deploy; pasang <b>webhook</b> (petunjuk di kartu GitHub) agar setiap <code>git push</code> langsung ter-deploy.</li>
 </ol>
 <div class="warn">Aplikasi <b>wajib</b> mendengarkan port dari <code>process.env.PORT</code>, contoh: <code>app.listen(process.env.PORT)</code>. Port ditentukan panel.</div>
 <ul>

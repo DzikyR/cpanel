@@ -18,6 +18,33 @@
 <button class="btn-sm btn-gray" {{ 'disabled' if running }}>Jalankan</button></form>{% endif %}
 </div>
 
+<div class="card" id="git"><h2>⎇ GitHub</h2>
+{% if git %}
+<table class="form">
+<tr><td class="muted" style="width:170px">Repo</td><td><code>{{ git.repo }}</code> · branch <code>{{ git.branch }}</code>
+{% if git.repo.startswith('https://github.com/') %} · <a href="{{ git.repo[:-4] if git.repo.endswith('.git') else git.repo }}" target="_blank">buka di GitHub ↗</a>{% endif %}</td></tr>
+<tr><td class="muted">Deploy terakhir</td><td>{% if git_running %}⏳ sedang berjalan… <a href="">refresh</a>{% elif git.last %}{{ git.last.time }} — {{ '✅ berhasil' if git.last.ok else '❌ gagal' }}{% else %}<span class="muted">belum pernah</span>{% endif %}</td></tr>
+</table>
+<form method="post" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="git_deploy">
+<button class="btn-green" {{ 'disabled' if git_running or running }}>🚀 Deploy Sekarang</button>
+<span class="muted">git pull → {{ 'npm install + build → restart' if n.auto_install else 'restart' }}</span>
+<a class="btn btn-sm btn-gray" href="/sites/{{ domain }}/git">Pengaturan Git lengkap</a></form>
+{% if git_log %}<details {{ 'open' if git_running or (git.last and not git.last.ok) }}><summary>Log deploy Git</summary><pre>{{ git_log }}</pre></details>{% endif %}
+<h3 style="font-size:14px;margin:14px 0 6px">Auto deploy setiap push</h3>
+<p class="muted">GitHub → repo → <b>Settings → Webhooks → Add webhook</b>: Payload URL <code>{{ hook }}</code>, Content type <code>application/json</code>, Secret <code>{{ git.secret }}</code>, event <i>Just the push event</i>.</p>
+{% else %}
+<p class="muted">Tarik kode langsung dari GitHub; setiap deploy otomatis menjalankan npm install + build + restart.</p>
+<form method="post" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="git_connect">
+<input name="repo" placeholder="https://github.com/user/repo.git atau git@github.com:user/repo.git" required style="min-width:380px">
+<input name="branch" value="main" style="width:110px"><button>Hubungkan &amp; Deploy</button></form>
+<p class="muted">Kode ditarik ke <code>/var/www/{{ domain }}/repo</code> dan folder aplikasi otomatis dipindah ke sana.</p>
+{% endif %}
+<h3 style="font-size:14px;margin:14px 0 6px">Deploy Key (repo privat)</h3>
+<p class="muted">GitHub → repo → <b>Settings → Deploy keys → Add deploy key</b>, tempel key ini (read-only cukup). Pakai URL SSH <code>git@github.com:user/repo.git</code>.</p>
+<pre style="white-space:pre-wrap;word-break:break-all" id="pubkey">{{ pubkey }}</pre>
+<button type="button" class="btn-sm btn-gray" onclick="var t=document.getElementById('pubkey').textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){this.textContent='Tersalin ✓'}.bind(this),function(){var r=document.createRange();r.selectNodeContents(document.getElementById('pubkey'));var s=getSelection();s.removeAllRanges();s.addRange(r);document.execCommand('copy');}.bind(this))">📋 Salin key</button>
+</div>
+
 <div class="card"><h2>Pengaturan</h2>
 <form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="save">
 <table class="form">
@@ -51,5 +78,5 @@
 <form method="post" onsubmit="return confirm('Hentikan aplikasi dan kembalikan {{ domain }} ke PHP?')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="remove">
 <button class="btn-sm btn-red">Lepas Node.js</button> <span class="muted">Service dihentikan, website kembali memakai PHP. Folder aplikasi & database tidak dihapus.</span></form></div>
 <script>document.querySelectorAll('pre').forEach(function(p){p.scrollTop=p.scrollHeight;});</script>
-{% if running %}<script>setTimeout(function(){location.reload()},4000);</script>{% endif %}
+{% if running or git_running %}<script>setTimeout(function(){location.reload()},4000);</script>{% endif %}
 {% endblock %}

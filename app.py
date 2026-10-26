@@ -483,12 +483,29 @@ def git_done(domain):
         if ok and laravel_status(domain)["queue"]:
             run(["systemctl", "restart", queue_unit(domain)])
         n = cfg.get("node", {}).get(domain)
-        if ok and n and nodeapp.status(domain)["enabled"]:
+        if ok and n:
             if n.get("auto_install", True):
                 nodeapp.task(WWW, domain, n, ["install", "build"])
-            else:
+            elif nodeapp.status(domain)["enabled"]:
                 nodeapp.control(domain, "restart")
     return cb
+
+
+def git_db(domain):
+    """Pembuat database MySQL + .env otomatis saat deploy; tidak dipakai aplikasi Node.js (punya env sendiri)."""
+    return None if domain in cfg.get("node", {}) else site_db(domain)
+
+
+def git_connect(domain, repo, branch):
+    """Validasi lalu simpan pengaturan Git website. Kembalikan (g, error)."""
+    if not gitdeploy.REPO_RE.match(repo):
+        return None, "URL repo tidak valid. Contoh: https://github.com/user/repo.git atau git@github.com:user/repo.git"
+    if not gitdeploy.BRANCH_RE.match(branch):
+        return None, "Nama branch tidak valid"
+    g = cfg.setdefault("git", {}).setdefault(domain, {"secret": secrets.token_hex(20), "subdir": "", "post_cmd": ""})
+    g.update(repo=repo, branch=branch)
+    save_config()
+    return g, None
 
 
 def ensure_db(creds):
@@ -610,12 +627,12 @@ def site_git(domain):
                 except RuntimeError as e:
                     flash(f"Gagal mengubah root nginx: {e}", "error")
                 if first or request.form.get("deploy_now") == "1":
-                    gitdeploy.deploy(WWW, domain, g, git_done(domain), site_db(domain))
+                    gitdeploy.deploy(WWW, domain, g, git_done(domain), git_db(domain))
                     flash("Pengaturan disimpan, deploy dimulai…", "ok")
                 else:
                     flash("Pengaturan disimpan", "ok")
         elif act == "deploy" and g:
-            if gitdeploy.deploy(WWW, domain, g, git_done(domain), site_db(domain)):
+            if gitdeploy.deploy(WWW, domain, g, git_done(domain), git_db(domain)):
                 flash("Deploy dimulai…", "ok")
             else:
                 flash("Deploy masih berjalan", "error")
@@ -678,7 +695,7 @@ def git_hook(domain):
     ref = (payload or {}).get("ref", "")
     if event != "push" or ref != f"refs/heads/{g['branch']}":
         return {"ok": True, "msg": f"diabaikan ({event} {ref})"}
-    started = gitdeploy.deploy(WWW, domain, g, git_done(domain), site_db(domain))
+    started = gitdeploy.deploy(WWW, domain, g, git_done(domain), git_db(domain))
     return {"ok": True, "msg": "deploy dimulai" if started else "deploy sedang berjalan"}, 202
 
 
@@ -1068,8 +1085,15 @@ def node_page():
         if err:
             flash(err, "error")
             return redirect(url_for("node_page"))
+        repo = request.form.get("repo", "").strip()
+        g = None
+        if repo:
+            n["dir"] = str(gitdeploy.repo_dir(WWW, domain))
+            g, gerr = git_connect(domain, repo, request.form.get("branch", "").strip() or "main")
+            if gerr:
+                flash(gerr, "error")
         app_dir = Path(n["dir"])
-        if request.form.get("starter") == "1" and nodeapp.starter(app_dir):
+        if not repo and request.form.get("starter") == "1" and nodeapp.starter(app_dir):
             flash("Contoh aplikasi (server.js) dibuat. Ganti dengan aplikasi Anda lewat File Manager atau Git.", "ok")
         app_dir.mkdir(parents=True, exist_ok=True)
         fix_owner(WWW / domain)
@@ -1088,7 +1112,12 @@ def node_page():
             node_apply(domain, n)
         except RuntimeError as e:
             flash(f"Konfigurasi nginx gagal: {e}", "error")
-        if (app_dir / "package.json").exists():
+        if g:
+            gitdeploy.ensure_key(domain)
+            gitdeploy.deploy(WWW, domain, g, git_done(domain), None)
+            flash(f"Aplikasi Node.js {domain} dibuat. Menarik kode dari GitHub, lalu npm install & start… "
+                  "(repo privat: tambahkan Deploy Key di bawah ke GitHub, lalu klik Deploy)", "ok")
+        elif (app_dir / "package.json").exists():
             nodeapp.task(WWW, domain, n, ["install", "build"])
             flash(f"Aplikasi Node.js {domain} dibuat. npm install & start berjalan…", "ok")
         else:
@@ -1170,6 +1199,27 @@ def node_detail(domain):
             if nodeapp.status(domain)["enabled"]:
                 nodeapp.control(domain, "restart")
             flash("Database dibuat dan dimasukkan ke environment aplikasi", "ok")
+        elif act == "git_connect":
+            g, err = git_connect(domain, request.form.get("repo", "").strip(),
+                                 request.form.get("branch", "").strip() or "main")
+            if err:
+                flash(err, "error")
+            else:
+                rd = gitdeploy.repo_dir(WWW, domain)
+                if (gitdeploy.src_dir(WWW, domain) / ".git").exists() or not rd.exists() or not any(rd.iterdir()) \
+                        or (rd / ".git").exists():
+                    n["dir"] = str(rd)
+                    save_config()
+                    node_apply(domain, n)
+                    gitdeploy.deploy(WWW, domain, g, git_done(domain), None)
+                    flash("GitHub terhubung, folder aplikasi kini repo/. Deploy dimulai…", "ok")
+                else:
+                    flash(f"Folder {rd} sudah berisi file bukan dari Git. Kosongkan dulu lewat File Manager.", "error")
+        elif act == "git_deploy" and cfg.get("git", {}).get(domain):
+            if gitdeploy.deploy(WWW, domain, cfg["git"][domain], git_done(domain), None):
+                flash("Deploy dimulai: git pull → npm install + build → restart", "ok")
+            else:
+                flash("Deploy masih berjalan", "error")
         elif act == "remove":
             cfg["node"].pop(domain)
             save_config()
@@ -1191,6 +1241,9 @@ def node_detail(domain):
                            env_text=nodeapp.env_text(n.get("env", {})), db_env=nodeapp.db_env(n),
                            pg_on=pgsql.available(), pg_url=pgsql.url(n["pg"]) if n.get("pg") else None,
                            url=site_url(domain), git=cfg.get("git", {}).get(domain),
+                           pubkey=gitdeploy.ensure_key(domain), git_running=gitdeploy.is_running(domain),
+                           git_log=gitdeploy.read_log(domain),
+                           hook=f"{request.headers.get('X-Forwarded-Proto', request.scheme)}://{request.host}/hook/{domain}",
                            rel_dir=str(app_dir.relative_to(site)) if site in app_dir.parents else n["dir"])
 
 
