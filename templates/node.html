@@ -29,7 +29,8 @@
 <label id="starter"><input type="checkbox" name="starter" value="1" checked> Buat contoh aplikasi bila folder kosong<br></label>
 Database: <select name="make_db"><option value="">tidak perlu</option>{% if pg_on %}<option value="pgsql">PostgreSQL</option>{% endif %}<option value="mysql">MySQL / MariaDB</option>{% if pg_on %}<option value="both">PostgreSQL + MySQL</option>{% endif %}</select>
 <span class="muted">kredensial otomatis masuk ke environment</span><br>
-<label><input type="checkbox" name="auto_install" value="1" checked> Setelah Git deploy: npm install + build + restart otomatis</label>
+<label><input type="checkbox" name="auto_install" value="1" checked> Setelah Git deploy: npm install + build + migrasi + restart otomatis</label>
+<div class="muted">Panel membaca <code>.env.example</code>, <code>package.json</code> &amp; Prisma: database dibuat bila diperlukan, secret/URL/SMTP diisi otomatis, migrasi Prisma dijalankan, seeder sekali di deploy pertama.</div>
 {% if cf_on %}<br><label><input type="checkbox" name="publish" value="1" {{ 'checked' if cf_auto }}> Publikasikan via Cloudflare (domain baru)</label>{% endif %}
 </td></tr></table>
 <p><button>🟢 Buat Aplikasi</button></p></form></div>

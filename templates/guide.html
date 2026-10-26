@@ -105,7 +105,8 @@ Aplikasi yang sudah ada bisa dihubungkan ke GitHub kapan saja dari kartu <b>⎇ 
 <div class="warn">Aplikasi <b>wajib</b> mendengarkan port dari <code>process.env.PORT</code>, contoh: <code>app.listen(process.env.PORT)</code>. Port ditentukan panel.</div>
 <ul>
 <li><b>Perintah start</b>: <code>npm start</code>, <code>node app.js</code>, <code>npx next start</code> (Next.js), <code>node .output/server/index.mjs</code> (Nuxt).</li>
-<li><b>Environment</b>: isi <code>KEY=VALUE</code> per baris (pengganti file <code>.env</code>), lalu <b>Simpan &amp; Restart</b>.</li>
+<li><b>Environment</b> (pengganti file <code>.env</code>): menu Node.js → <b>Kelola</b> → bagian <b>Pengaturan → Environment</b>. Isi <code>KEY=VALUE</code> per baris, lalu <b>Simpan &amp; Restart</b>. Nilai tersimpan di panel, bukan di folder aplikasi, jadi File Manager hanya menampilkan <code>.env.example</code>.</li>
+<li><b>Otomatis dari <code>.env.example</code></b>: saat deploy, panel menyalin nilai bawaan, membuat secret acak, mengisi URL https &amp; <code>TRUST_PROXY</code>, membuat database PostgreSQL/MySQL bila diperlukan, menjalankan migrasi Prisma, dan seeder sekali. Variabel yang perlu diisi sendiri (mis. login Google) ditampilkan di bagian atas halaman aplikasi.</li>
 <li>Database PostgreSQL tersedia sebagai <code>DATABASE_URL</code> (siap untuk Prisma, Drizzle, Sequelize, <code>pg</code>).</li>
 <li>Skrip lain di <code>package.json</code> (mis. migrasi <code>prisma migrate deploy</code>) dijalankan lewat <b>npm run</b>.</li>
 <li><b>Log aplikasi</b> menampilkan output <code>console.log</code> dan error; cek di sini bila website menampilkan "Aplikasi Node.js sedang tidak berjalan".</li>

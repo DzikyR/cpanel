@@ -1,9 +1,17 @@
 {% extends "base.html" %}{% block title %}Node.js · {{ domain }}{% endblock %}{% block content %}
 <p><a href="/node">← Node.js</a></p>
+{% if crash %}<div class="card" style="border-color:var(--err)"><h2>❌ Aplikasi gagal berjalan</h2>
+<p>Output terakhir aplikasi (penyebab biasanya di baris <code>Error:</code>):</p><pre>{{ crash }}</pre>
+<p class="muted">Penyebab umum: variabel environment belum diisi (lihat bagian Pengaturan), database belum dibuat, perintah start salah, atau aplikasi tidak memakai <code>process.env.PORT</code>. Setelah diperbaiki klik <b>Simpan &amp; Restart</b>.</p></div>{% endif %}
+{% if public == false %}<div class="flash error">🌐 {{ domain }} belum bisa diakses dari internet (belum dipublikasikan di Cloudflare).
+<form method="post" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button name="action" value="publish" class="btn-sm btn-green">Publikasikan sekarang</button></form></div>{% endif %}
+{% if manual_env %}<div class="flash error">⚠ Variabel dari <code>.env.example</code> yang belum diisi: {% for k in manual_env %}<code>{{ k }}</code> {% endfor %}
+<br><span class="muted">Isi di Pengaturan → Environment bila fitur tersebut dipakai (mis. login Google, SMTP), lalu Simpan &amp; Restart.</span></div>{% endif %}
 <div class="card"><h2>Status</h2>
 <table class="form">
 <tr><td class="muted" style="width:170px">Aplikasi</td><td><span class="badge {{ st.state }}">{{ st.state }}</span> <span class="muted">{{ st.sub }}{% if st.state == 'active' %} · PID {{ st.pid }} · sejak {{ st.since }}{% if st.mem %} · RAM {{ st.mem|size }}{% endif %}{% endif %}{% if st.restarts != '0' %} · restart {{ st.restarts }}×{% endif %}</span></td></tr>
-<tr><td class="muted">Website</td><td><a href="{{ url }}" target="_blank">{{ url }}</a> <span class="muted">→ nginx → 127.0.0.1:{{ n.port }}</span></td></tr>
+<tr><td class="muted">Website</td><td><a href="{{ url }}" target="_blank">{{ url }}</a> <span class="muted">→ nginx → 127.0.0.1:{{ n.port }}</span>
+{% if public %} <span class="badge on">🌍 Online</span>{% elif public == false %} <span class="badge off">belum publik</span>{% endif %}</td></tr>
 <tr><td class="muted">Folder</td><td><a href="/files?p={{ (domain ~ '/' ~ rel_dir)|urlencode }}"><code>{{ n.dir }}</code></a>{% if not has_pkg %} <span class="badge off">package.json belum ada</span>{% endif %}
 {% if git %}<span class="muted"> · Git: <a href="/sites/{{ domain }}/git">{{ git.repo.split('/')[-1] }} ({{ git.branch }})</a></span>{% endif %}</td></tr>
 </table>
@@ -45,14 +53,15 @@
 <button type="button" class="btn-sm btn-gray" onclick="var t=document.getElementById('pubkey').textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){this.textContent='Tersalin ✓'}.bind(this),function(){var r=document.createRange();r.selectNodeContents(document.getElementById('pubkey'));var s=getSelection();s.removeAllRanges();s.addRange(r);document.execCommand('copy');}.bind(this))">📋 Salin key</button>
 </div>
 
-<div class="card"><h2>Pengaturan</h2>
+<div class="card" id="env"><h2>Pengaturan</h2>
 <form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="save">
 <table class="form">
 <tr><td class="muted" style="width:170px">Versi Node.js</td><td><select name="version">{% for k, label in runtimes %}<option value="{{ k }}" {{ 'selected' if k == n.version }}>{{ label }}</option>{% endfor %}</select> <a class="muted" href="/node#versi">+ versi lain</a></td></tr>
 <tr><td class="muted">Folder aplikasi</td><td><code>/var/www/{{ domain }}/</code><input name="dir" value="{{ rel_dir }}" required style="width:160px"></td></tr>
 <tr><td class="muted">Perintah start</td><td><input name="start" value="{{ n.start }}" required style="min-width:340px;font-family:ui-monospace,monospace"><div class="muted">Dijalankan di folder aplikasi sebagai www-data. Aplikasi wajib mendengarkan <code>process.env.PORT</code> ({{ n.port }}).</div></td></tr>
 <tr><td class="muted">Environment</td><td><textarea name="env" rows="6" style="width:100%;max-width:560px;font-family:ui-monospace,monospace" placeholder="KEY=VALUE per baris">{{ env_text }}</textarea>
-<div class="muted">Otomatis: <code>NODE_ENV=production</code> (bisa ditimpa), <code>PORT={{ n.port }}</code>, <code>HOST=127.0.0.1</code>{% for k in db_env %}, <code>{{ k }}</code>{% endfor %}.</div></td></tr>
+<div class="muted">Inilah pengganti file <code>.env</code>: nilainya disimpan panel (bukan di folder aplikasi) dan diberikan ke aplikasi saat berjalan. <code>.env.example</code> di repo hanya contoh; tidak perlu membuat <code>.env</code>.<br>
+Otomatis juga: <code>NODE_ENV=production</code> (bisa ditimpa), <code>PORT={{ n.port }}</code>, <code>HOST=127.0.0.1</code>{% for k in db_env %}, <code>{{ k }}</code>{% endfor %}.</div></td></tr>
 <tr><td></td><td><label><input type="checkbox" name="auto_install" value="1" {{ 'checked' if n.auto_install }}> Setelah Git deploy: npm install + build + restart otomatis</label></td></tr>
 </table>
 <p><button>Simpan &amp; Restart</button></p></form></div>

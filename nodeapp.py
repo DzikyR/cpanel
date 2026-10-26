@@ -7,7 +7,7 @@ Setiap website Node.js:
 Pengaturan disimpan di config.json bagian "node":
   {domain: {"dir", "start", "port", "version", "env": {KEY: VALUE}, "db", "pg", "auto_install"}}
 """
-import json, os, re, shutil, subprocess, threading, time, urllib.request
+import json, os, re, secrets, shutil, subprocess, threading, time, urllib.request
 from pathlib import Path
 
 import psutil
@@ -339,6 +339,13 @@ def journal(domain, lines=100):
     return run(["journalctl", "-u", unit_name(domain), "-n", str(lines), "--no-pager", "-o", "short-iso"])[1]
 
 
+def crash_log(domain, lines=15):
+    """Baris terakhir output aplikasi (tanpa baris systemd), untuk menampilkan penyebab crash."""
+    out = run(["journalctl", "-u", unit_name(domain), "-n", "200", "--no-pager", "-o", "cat"])[1].splitlines()
+    out = [l for l in out if not re.match(r"^(localpanel-node-|Started |Stopped |Stopping )", l)]
+    return "\n".join(out[-lines:])
+
+
 def remove(domain):
     """Hentikan & hapus service (folder aplikasi tidak disentuh)."""
     unit = unit_name(domain)
@@ -356,7 +363,7 @@ def is_running(domain):
 
 
 def task(www, domain, n, steps, restart=True, on_done=None):
-    """Jalankan langkah npm di background sebagai www-data.
+    """Jalankan langkah npm di background sebagai www-data. on_done(ok, langkah_gagal_tidak_fatal).
     steps: daftar "install", "build" (bila ada skrip build) atau "run:<skrip>"."""
     lock = _locks.setdefault(domain, threading.Lock())
     if not lock.acquire(blocking=False):
@@ -372,6 +379,7 @@ def task(www, domain, n, steps, restart=True, on_done=None):
                "NPM_CONFIG_FUND": "false", "NPM_CONFIG_AUDIT": "false",
                "NODE_ENV": "production", "HOST": "127.0.0.1", "PORT": str(n["port"]),  # sama dengan service
                **db_env(n), **n.get("env", {})}
+        failed = []
         with open(log_path(domain), "w") as log:
             log.write(f"{domain} — {time.strftime('%Y-%m-%d %H:%M:%S')} — Node {node_version(n['version'])}\n")
 
@@ -403,21 +411,115 @@ def task(www, domain, n, steps, restart=True, on_done=None):
                             step("npm run build", ["npm", "run", "build"])
                     elif s.startswith("run:"):
                         step(f"npm run {s[4:]}", ["npm", "run", s[4:]])
+                    elif s == "migrate":
+                        step("migrasi database (prisma migrate deploy)", ["npx", "--no-install", "prisma", "migrate", "deploy"])
+                    elif s == "seed":
+                        try:
+                            step("isi data awal (prisma db seed)", ["npx", "--no-install", "prisma", "db", "seed"])
+                        except RuntimeError as e:
+                            # seeder gagal tidak menghentikan aplikasi; dicoba lagi pada deploy berikutnya
+                            failed.append("seed")
+                            log.write(f"⚠ {e}; aplikasi tetap dijalankan\n")
                 if restart:
                     log.write("\n$ restart aplikasi\n")
                     rc, out = control(domain, "restart")
                     log.write(out + "\n" if out else "")
                     time.sleep(2)
                     st = status(domain)
-                    if st["state"] != "active":
-                        raise RuntimeError(f"aplikasi tidak berjalan ({st['state']}/{st['sub']}), lihat log aplikasi")
+                    if st["state"] != "active" or st["sub"] == "auto-restart":
+                        log.write("\n--- log aplikasi ---\n" + crash_log(domain) + "\n")
+                        raise RuntimeError(f"aplikasi gagal berjalan ({st['state']}/{st['sub']}); penyebabnya ada di log aplikasi di atas")
                 log.write("\n✅ Selesai\n")
             except Exception as e:
                 ok = False
                 log.write(f"\n❌ {e}\n")
         if on_done:
-            on_done(ok)
+            on_done(ok, failed)
         lock.release()
 
     threading.Thread(target=job, daemon=True).start()
     return True
+
+
+# ---------- deteksi kebutuhan aplikasi (.env.example, package.json, Prisma) ----------
+PLACEHOLDER_RE = re.compile(r"ganti|change|replace|your[-_ ]|xxx|isi[-_ ]|example|contoh|secret|password|todo|<.*>",
+                            re.I)
+SECRET_KEY_RE = re.compile(r"^(SECRET(_KEY)?|APP_KEY|(SESSION|JWT|COOKIE|AUTH|NEXTAUTH|CSRF|HMAC|ENCRYPTION|"
+                           r"ACCESS_TOKEN|REFRESH_TOKEN|TOKEN|APP)_(SECRET|KEY)|.*_SIGNING_(SECRET|KEY)|.*_SALT)$")
+THIRD_PARTY_RE = re.compile(r"CLIENT|API|GOOGLE|GITHUB|FACEBOOK|STRIPE|MIDTRANS|XENDIT|AWS|S3|FIREBASE|SMTP|MAIL|"
+                            r"PUBLIC|SUPABASE|CLOUDINARY|TWILIO|OPENAI|ANTHROPIC")
+URL_KEY_RE = re.compile(r"^((APP|BASE|PUBLIC|SITE|SERVER|FRONTEND|WEB|NEXT_PUBLIC_APP|NEXT_PUBLIC_SITE)_URL|"
+                        r"NEXTAUTH_URL|AUTH_URL|ORIGIN|URL|CORS_ORIGIN)$")
+DB_KEYS = {"DATABASE_URL", "DB_HOST", "DB_PORT", "DB_NAME", "DB_DATABASE", "DB_USER", "DB_USERNAME", "DB_PASSWORD",
+           "PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD"}
+SKIP_KEYS = {"NODE_ENV", "PORT", "HOST", "HOSTNAME"}
+
+
+def read_env_example(app_dir):
+    for name in (".env.example", ".env.sample", ".env.dist", "env.example"):
+        f = Path(app_dir) / name
+        if f.is_file():
+            env, _ = parse_env("\n".join(l for l in f.read_text(errors="replace").splitlines()
+                                         if re.match(r"^\s*(export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=", l)
+                                         and not re.match(r"^\s*(export\s+)?PORT\s*=", l)))
+            return {k: re.sub(r"\s+#.*$", "", v) for k, v in (env or {}).items()}
+    return {}
+
+
+def inspect(app_dir):
+    """Kebutuhan aplikasi: jenis database, Prisma (migrasi/seed), isi .env.example."""
+    app_dir = Path(app_dir)
+    try:
+        pkg = json.loads((app_dir / "package.json").read_text())
+    except (OSError, ValueError):
+        pkg = {}
+    deps = {**(pkg.get("dependencies") or {}), **(pkg.get("devDependencies") or {})}
+    example = read_env_example(app_dir)
+    schema = app_dir / "prisma" / "schema.prisma"
+    provider = None
+    if schema.is_file():
+        m = re.search(r'datasource\s+\w+\s*{[^}]*provider\s*=\s*"(\w+)"', schema.read_text(errors="replace"))
+        provider = m.group(1) if m else None
+    url = example.get("DATABASE_URL", "")
+    db = None
+    if provider == "postgresql" or url.startswith(("postgres://", "postgresql://")) or \
+            {"pg", "postgres", "pg-promise", "@neondatabase/serverless"} & set(deps):
+        db = "pgsql"
+    elif provider == "mysql" or url.startswith("mysql://") or {"mysql2", "mysql"} & set(deps):
+        db = "mysql"
+    migrations = app_dir / "prisma" / "migrations"
+    return {"db": db, "example": example, "prisma": schema.is_file() and "prisma" in deps,
+            "migrations": migrations.is_dir() and any(p.is_dir() for p in migrations.iterdir()),
+            "seed": bool((pkg.get("prisma") or {}).get("seed")) or any(app_dir.glob("prisma.config.*"))}
+
+
+def _placeholder(v):
+    return not v or bool(PLACEHOLDER_RE.search(v))
+
+
+def auto_env(info, domain, current):
+    """Variabel yang bisa diisi otomatis: {key: value}, dan yang harus diisi manual: [key]."""
+    url = f"https://{domain}"
+    add, manual = {}, []
+    for k, v in info["example"].items():
+        if k in current or k in SKIP_KEYS or k in DB_KEYS:
+            continue
+        if k == "TRUST_PROXY":
+            add[k] = "1"
+        elif URL_KEY_RE.match(k) and (not v or re.search(r"localhost|127\.0\.0\.1|example", v)):
+            add[k] = url
+        elif re.search(r"_(CALLBACK_URL|REDIRECT_URI|REDIRECT_URL)$", k) and re.search(r"localhost|127\.0\.0\.1", v):
+            add[k] = re.sub(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?", url, v)
+        elif SECRET_KEY_RE.match(k) and not THIRD_PARTY_RE.search(k) and _placeholder(v):
+            add[k] = secrets.token_urlsafe(48)
+        elif re.match(r"^(SEED|ADMIN|SUPERADMIN|DEFAULT_ADMIN)\w*_PASSWORD$", k) and v and _placeholder(v):
+            add[k] = secrets.token_urlsafe(12)
+        elif k == "SMTP_HOST" and re.search(r"localhost|127\.0\.0\.1|mailpit|mailhog", v or "localhost"):
+            add.update(SMTP_HOST="127.0.0.1", SMTP_PORT="587", SMTP_SECURE="false")
+        elif k in ("SMTP_PORT", "SMTP_SECURE") and "SMTP_HOST" in add:
+            continue
+        elif not v or (_placeholder(v) and not re.search(r"_(NAME|EMAIL|FROM)$", k)):
+            manual.append(k)
+        else:
+            add[k] = v  # nilai bawaan dari .env.example (seperti cp .env.example .env)
+    return add, [k for k in manual if k not in add]

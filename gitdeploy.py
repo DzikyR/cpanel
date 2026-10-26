@@ -25,6 +25,14 @@ def ensure_key(domain):
     return Path(str(k) + ".pub").read_text().strip()
 
 
+def prune_keys(keep, in_use, age=3600):
+    """Hapus deploy key milik domain yang tidak dipakai (mis. dibuat saat domain masih diketik di form)."""
+    for pub in KEYS.glob("*.pub"):
+        d = pub.name[:-4]
+        if d != keep and d not in in_use and time.time() - pub.stat().st_mtime > age:
+            remove_key(d)
+
+
 def remove_key(domain):
     for p in (key_path(domain), Path(str(key_path(domain)) + ".pub")):
         p.unlink(missing_ok=True)

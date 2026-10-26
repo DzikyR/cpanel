@@ -485,7 +485,7 @@ def git_done(domain):
         n = cfg.get("node", {}).get(domain)
         if ok and n:
             if n.get("auto_install", True):
-                nodeapp.task(WWW, domain, n, ["install", "build"])
+                node_deploy(domain)
             elif nodeapp.status(domain)["enabled"]:
                 nodeapp.control(domain, "restart")
     return cb
@@ -1048,6 +1048,48 @@ def node_apply(domain, n):
     set_vhost(domain, nodeapp.vhost(domain, n))
 
 
+def node_prepare(domain):
+    """Siapkan aplikasi sesuai isi kodenya: database, environment otomatis. Kembalikan (info, pesan)."""
+    n = cfg["node"][domain]
+    info = nodeapp.inspect(n["dir"])
+    msgs = []
+    try:
+        if info["db"] == "pgsql" and not n.get("pg") and pgsql.available():
+            site_pg(domain, "node")()
+            msgs.append("database PostgreSQL dibuat (DATABASE_URL)")
+        elif info["db"] == "mysql" and not n.get("db"):
+            site_db(domain, "node")()
+            msgs.append("database MySQL dibuat (DATABASE_URL)")
+    except (pymysql.MySQLError, pgsql.PGError) as e:
+        msgs.append(f"database gagal dibuat: {e}")
+    add, manual = nodeapp.auto_env(info, domain, {**nodeapp.db_env(n), **n.get("env", {})})
+    if add:
+        n.setdefault("env", {}).update(add)
+        msgs.append("environment diisi otomatis: " + ", ".join(sorted(add)))
+    n["manual_env"] = manual
+    save_config()
+    nodeapp.write_service(WWW, domain, n)
+    return info, msgs
+
+
+def node_deploy(domain, base=("install", "build")):
+    """npm install + build, migrasi Prisma, seeder (sekali), lalu restart. False bila proses lain berjalan."""
+    n = cfg["node"][domain]
+    info, msgs = node_prepare(domain)
+    steps = list(base)
+    if info["prisma"] and info["migrations"] and (n.get("pg") or n.get("db")):
+        steps.append("migrate")
+    seed = info["prisma"] and info["seed"] and not n.get("seeded") and (n.get("pg") or n.get("db"))
+    if seed:
+        steps.append("seed")
+
+    def done(ok, failed):
+        if ok and seed and "seed" not in failed:
+            n["seeded"] = True
+            save_config()
+    return nodeapp.task(WWW, domain, n, steps, on_done=done), msgs
+
+
 def node_form(n, domain):
     """Baca form pengaturan Node.js ke n. Kembalikan pesan error atau None."""
     version = request.form.get("version", "system")
@@ -1118,8 +1160,9 @@ def node_page():
             flash(f"Aplikasi Node.js {domain} dibuat. Menarik kode dari GitHub, lalu npm install & start… "
                   "(repo privat: tambahkan Deploy Key di bawah ke GitHub, lalu klik Deploy)", "ok")
         elif (app_dir / "package.json").exists():
-            nodeapp.task(WWW, domain, n, ["install", "build"])
-            flash(f"Aplikasi Node.js {domain} dibuat. npm install & start berjalan…", "ok")
+            _, msgs = node_deploy(domain)
+            flash(f"Aplikasi Node.js {domain} dibuat. npm install & start berjalan…"
+                  + ("; " + "; ".join(msgs) if msgs else ""), "ok")
         else:
             flash(f"Aplikasi Node.js {domain} dibuat. Unggah aplikasi (package.json) ke {app_dir}, lalu klik npm install.", "ok")
         return redirect(url_for("node_detail", domain=domain))
@@ -1139,6 +1182,7 @@ def node_deploy_key():
     domain = request.args.get("domain", "").strip().lower()
     if not DOMAIN_RE.match(domain):
         return {"error": "domain belum lengkap"}, 400
+    gitdeploy.prune_keys(domain, {x["domain"] for x in list_sites()} | set(cfg.get("git", {})))
     return {"domain": domain, "key": gitdeploy.ensure_key(domain),
             "github": gitdeploy.github_keys_url(request.args.get("repo", "").strip())}
 
@@ -1196,10 +1240,13 @@ def node_detail(domain):
                 steps = [f"run:{name}"] if name in nodeapp.scripts(Path(n["dir"])) else None
             if not steps:
                 flash("Skrip tidak ditemukan di package.json", "error")
-            elif nodeapp.task(WWW, domain, n, steps, restart=act != "script"):
-                flash("Dijalankan…", "ok")
+            elif act == "script":
+                ok = nodeapp.task(WWW, domain, n, steps, restart=False)
+                flash("Dijalankan…" if ok else "Proses lain masih berjalan", "ok" if ok else "error")
             else:
-                flash("Proses lain masih berjalan", "error")
+                ok, msgs = node_deploy(domain, steps)
+                flash(("Dijalankan…" + ("; " + "; ".join(msgs) if msgs else "")) if ok else "Proses lain masih berjalan",
+                      "ok" if ok else "error")
         elif act in ("db", "pg") and not n.get(act):
             try:
                 (site_db if act == "db" else site_pg)(domain, "node")()
@@ -1226,6 +1273,12 @@ def node_detail(domain):
                     flash("GitHub terhubung, folder aplikasi kini repo/. Deploy dimulai…", "ok")
                 else:
                     flash(f"Folder {rd} sudah berisi file bukan dari Git. Kosongkan dulu lewat File Manager.", "error")
+        elif act == "publish":
+            err = publish_conflict(domain)
+            if err:
+                flash(f"Cloudflare: {err}", "error")
+            elif (msg := publish_site(domain)):
+                flash(msg[1], msg[0])
         elif act == "git_deploy" and cfg.get("git", {}).get(domain):
             if gitdeploy.deploy(WWW, domain, cfg["git"][domain], git_done(domain), None):
                 flash("Deploy dimulai: git pull → npm install + build → restart", "ok")
@@ -1245,7 +1298,19 @@ def node_detail(domain):
         return redirect(url_for("node_detail", domain=domain))
     app_dir = Path(n["dir"])
     site = WWW / domain
-    return render_template("node_detail.html", domain=domain, n=n, st=nodeapp.status(domain),
+    st = nodeapp.status(domain)
+    public = None
+    if cf_enabled() and in_cf_zone(domain):
+        try:
+            public = domain in cf().public_hostnames()
+        except cfapi.CFError:
+            pass
+    has_pkg = (app_dir / "package.json").exists()
+    crashing = has_pkg and not nodeapp.is_running(domain) and (st["state"] != "active" or st["sub"] == "auto-restart") \
+        and (st["enabled"] or st["restarts"] != "0")
+    return render_template("node_detail.html", domain=domain, n=n, st=st, public=public,
+                           crash=nodeapp.crash_log(domain) if crashing else None,
+                           manual_env=[k for k in n.get("manual_env", []) if k not in n.get("env", {})],
                            runtimes=nodeapp.runtimes(), scripts=nodeapp.scripts(app_dir),
                            has_pkg=(app_dir / "package.json").exists(), running=nodeapp.is_running(domain),
                            log=nodeapp.read_log(domain), journal=nodeapp.journal(domain),
