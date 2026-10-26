@@ -1,0 +1,49 @@
+{% extends "base.html" %}{% block title %}Node.js · {{ domain }}{% endblock %}{% block content %}
+<p><a href="/node">← Node.js</a></p>
+<div class="card"><h2>Status</h2>
+<table class="form">
+<tr><td class="muted" style="width:170px">Aplikasi</td><td><span class="badge {{ st.state }}">{{ st.state }}</span> <span class="muted">{{ st.sub }}{% if st.state == 'active' %} · PID {{ st.pid }} · sejak {{ st.since }}{% if st.mem %} · RAM {{ st.mem|size }}{% endif %}{% endif %}{% if st.restarts != '0' %} · restart {{ st.restarts }}×{% endif %}</span></td></tr>
+<tr><td class="muted">Website</td><td><a href="{{ url }}" target="_blank">{{ url }}</a> <span class="muted">→ nginx → 127.0.0.1:{{ n.port }}</span></td></tr>
+<tr><td class="muted">Folder</td><td><a href="/files?p={{ (domain ~ '/' ~ rel_dir)|urlencode }}"><code>{{ n.dir }}</code></a>{% if not has_pkg %} <span class="badge off">package.json belum ada</span>{% endif %}
+{% if git %}<span class="muted"> · Git: <a href="/sites/{{ domain }}/git">{{ git.repo.split('/')[-1] }} ({{ git.branch }})</a></span>{% endif %}</td></tr>
+</table>
+<form method="post" class="row"><input type="hidden" name="csrf" value="{{ csrf }}">
+{% if st.state == 'active' %}<button name="action" value="restart" class="btn-green">🔄 Restart</button><button name="action" value="stop" class="btn-red">⏹ Stop</button>
+{% else %}<button name="action" value="start" class="btn-green">▶ Start</button>{% endif %}
+<button name="action" value="install" class="btn-gray" {{ 'disabled' if running or not has_pkg }}>npm install</button>
+{% if 'build' in scripts %}<button name="action" value="build" class="btn-gray" {{ 'disabled' if running }}>npm install + build</button>{% endif %}
+</form>
+{% if scripts %}<form method="post" class="row" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="script">
+<span class="muted">npm run</span><select name="script">{% for s in scripts %}<option>{{ s }}</option>{% endfor %}</select>
+<button class="btn-sm btn-gray" {{ 'disabled' if running }}>Jalankan</button></form>{% endif %}
+</div>
+
+<div class="card"><h2>Pengaturan</h2>
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="save">
+<table class="form">
+<tr><td class="muted" style="width:170px">Versi Node.js</td><td><select name="version">{% for k, label in runtimes %}<option value="{{ k }}" {{ 'selected' if k == n.version }}>{{ label }}</option>{% endfor %}</select> <a class="muted" href="/node#versi">+ versi lain</a></td></tr>
+<tr><td class="muted">Folder aplikasi</td><td><code>/var/www/{{ domain }}/</code><input name="dir" value="{{ rel_dir }}" required style="width:160px"></td></tr>
+<tr><td class="muted">Perintah start</td><td><input name="start" value="{{ n.start }}" required style="min-width:340px;font-family:ui-monospace,monospace"><div class="muted">Dijalankan di folder aplikasi sebagai www-data. Aplikasi wajib mendengarkan <code>process.env.PORT</code> ({{ n.port }}).</div></td></tr>
+<tr><td class="muted">Environment</td><td><textarea name="env" rows="6" style="width:100%;max-width:560px;font-family:ui-monospace,monospace" placeholder="KEY=VALUE per baris">{{ env_text }}</textarea>
+<div class="muted">Otomatis: <code>NODE_ENV=production</code> (bisa ditimpa), <code>PORT={{ n.port }}</code>, <code>HOST=127.0.0.1</code>{% for k in db_env %}, <code>{{ k }}</code>{% endfor %}.</div></td></tr>
+<tr><td></td><td><label><input type="checkbox" name="auto_install" value="1" {{ 'checked' if n.auto_install }}> Setelah Git deploy: npm install + build + restart otomatis</label></td></tr>
+</table>
+<p><button>Simpan &amp; Restart</button></p></form></div>
+
+<div class="card"><h2>Database</h2>
+{% if n.db %}<table class="form">
+<tr><td class="muted" style="width:170px">Database</td><td><code>{{ n.db.name }}</code> · user <code>{{ n.db.user }}</code> · <details style="display:inline"><summary>password</summary><code>{{ n.db.password }}</code></details></td></tr>
+<tr><td class="muted">Environment</td><td><code>DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD DATABASE_URL</code></td></tr></table>
+{% else %}<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="db">
+<button class="btn-sm btn-gray">Buat database MySQL</button> <span class="muted">Kredensial otomatis dimasukkan ke environment aplikasi.</span></form>{% endif %}
+</div>
+
+<div class="card"><h2>Log npm</h2>{% if running %}<p>⏳ Sedang berjalan…</p>{% endif %}<pre id="log">{{ log or 'Belum ada.' }}</pre></div>
+<div class="card"><h2>Log aplikasi <span class="muted">(100 baris terakhir)</span></h2><pre id="jl">{{ journal or 'Belum ada.' }}</pre></div>
+
+<div class="card"><h2>Lepas Node.js</h2>
+<form method="post" onsubmit="return confirm('Hentikan aplikasi dan kembalikan {{ domain }} ke PHP?')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="remove">
+<button class="btn-sm btn-red">Lepas Node.js</button> <span class="muted">Service dihentikan, website kembali memakai PHP. Folder aplikasi & database tidak dihapus.</span></form></div>
+<script>document.querySelectorAll('pre').forEach(function(p){p.scrollTop=p.scrollHeight;});</script>
+{% if running %}<script>setTimeout(function(){location.reload()},4000);</script>{% endif %}
+{% endblock %}

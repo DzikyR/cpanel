@@ -6,6 +6,7 @@ Panel hosting sederhana ala cPanel untuk server Ubuntu/Debian: **Nginx + PHP-FPM
 - **Website**: buat/hapus vhost, domain dipilih dari domain aktif di Cloudflare (subdomain + domain), publikasi otomatis lewat Cloudflare Tunnel (cek bentrok DNS sebelum dibuat).
 - **Git Deploy**: tarik website dari GitHub (repo publik / privat dengan deploy key), webhook auto-deploy, database + `.env` dibuat otomatis, impor `database/*.sql` saat deploy pertama, dukungan repo berisi paket `.zip`, queue worker & scheduler Laravel.
 - **Aplikasi (installer sekali klik)**: WordPress, OJS, Moodle, Joomla, Drupal, SLiMS, Laravel, phpMyAdmin — versi resmi terbaru, database & akun admin dibuat otomatis.
+- **Node.js**: aplikasi Node.js per domain (mirip *Setup Node.js App* cPanel): pilih versi Node (sistem atau 18/20/22/24 resmi), service systemd + reverse proxy nginx (WebSocket), environment, database MySQL otomatis, npm install/build/skrip, log, auto-deploy dari Git.
 - **Backup & Restore**: satu berkas `.tar.gz` per website (file + database + pengaturan panel), jadwal harian/mingguan, restore ke server lain atau domain lain (konfigurasi & URL disesuaikan otomatis).
 - Database (MariaDB), File Manager, Services, Logs.
 
@@ -13,7 +14,7 @@ Panel hosting sederhana ala cPanel untuk server Ubuntu/Debian: **Nginx + PHP-FPM
 Ubuntu 24.04/26.04 atau Debian 12+, sebagai root:
 
 ```bash
-git clone https://github.com/brakekek/localpanel.git /opt/localpanel
+git clone https://github.com/DzikyR/cpanel.git /opt/localpanel
 cd /opt/localpanel
 bash install.sh --tunnel-token TOKEN_TUNNEL_CLOUDFLARE
 ```
@@ -42,6 +43,7 @@ cd /opt/localpanel && git pull && systemctl restart localpanel
 | `apps.py` | resep installer aplikasi |
 | `backup.py` | backup/restore (juga dipanggil cron: `backup.py auto`) |
 | `gitdeploy.py` | deploy dari Git |
+| `nodeapp.py` | aplikasi Node.js (versi Node, service, proxy) |
 | `cloudflare.py` | API Cloudflare (tunnel & DNS) |
 | `deploy/` | konfigurasi server yang dipasang `install.sh` |
 

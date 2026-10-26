@@ -2,9 +2,9 @@
 """Backup & restore per website untuk LocalPanel.
 
 Isi satu berkas backup (<domain>-<waktu>.tar.gz):
-  manifest.json   pengaturan website (git, aplikasi, database, nginx, queue/cron)
+  manifest.json   pengaturan website (git, aplikasi, Node.js, database, nginx, queue/cron)
   db/<nama>.sql   dump tiap database website
-  <domain>/...    seluruh folder /var/www/<domain> (tanpa node_modules)
+  <domain>/...    seluruh folder /var/www/<domain> (tanpa node_modules & cache npm)
 
 Dipakai juga dari cron:  python3 backup.py auto   (backup terjadwal + hapus backup lama)
 """
@@ -31,7 +31,7 @@ def slug(domain):
 def site_dbs(cfg, domain):
     """Semua database milik website: dari pengaturan Git, aplikasi, lalu .env Laravel."""
     out = {}
-    for section in ("git", "apps"):
+    for section in ("git", "apps", "node"):
         d = (cfg.get(section, {}).get(domain) or {}).get("db")
         if d:
             out[d["name"]] = d
@@ -90,6 +90,7 @@ def create(cfg, domain, log=None):
             "format": FORMAT, "domain": domain, "created": time.strftime("%Y-%m-%d %H:%M:%S"),
             "nginx_root": root, "nginx_conf": nginx, "dbs": dbs,
             "git": cfg.get("git", {}).get(domain), "app": cfg.get("apps", {}).get(domain),
+            "node": cfg.get("node", {}).get(domain),
             "queue": subprocess.run(["systemctl", "is-enabled", f"localpanel-queue@{domain}.service"],
                                     capture_output=True, text=True).stdout.strip() == "enabled",
             "schedule": (Path("/etc/cron.d") / ("localpanel-" + domain.replace(".", "_"))).exists(),
@@ -99,7 +100,7 @@ def create(cfg, domain, log=None):
         out = out_dir / f"{domain}-{stamp}.tar.gz"
         say(f"arsipkan file website ke {out.name}")
         p = subprocess.run(["tar", "czf", str(out), "-C", str(work), "manifest.json", "db",
-                            "-C", str(WWW), "--exclude=node_modules", domain], stderr=subprocess.PIPE, text=True)
+                            "-C", str(WWW), "--exclude=node_modules", "--exclude=.npm", domain], stderr=subprocess.PIPE, text=True)
         if p.returncode not in (0, 1):  # 1 = ada file berubah saat diarsipkan (mis. log), tetap valid
             out.unlink(missing_ok=True)
             raise RuntimeError(f"tar gagal: {p.stderr.strip()}")

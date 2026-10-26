@@ -13,6 +13,7 @@ import apps as appmgr
 import backup as bk
 import cloudflare as cfapi
 import gitdeploy
+import nodeapp
 
 BASE = Path(__file__).resolve().parent
 CONFIG = BASE / "config.json"
@@ -353,6 +354,7 @@ def sites():
     sites_ = list_sites()
     for x in sites_:
         x["git"] = cfg.get("git", {}).get(x["domain"])
+        x["node"] = cfg.get("node", {}).get(x["domain"])
         x["publishable"] = any(x["domain"] == z or x["domain"].endswith("." + z) for z in zones)
     return render_template("sites.html", sites=sites_, public=public, zones=zones, cf_on=cf_enabled(),
                            cf_auto=cfg.get("cf_auto", True), cf_err=cf_err)
@@ -419,6 +421,8 @@ def remove_site_data(domain, drop_db):
     laravel_set(domain, "queue", False)
     laravel_set(domain, "schedule", False)
     app_cron_file(domain).unlink(missing_ok=True)
+    if cfg.get("node", {}).pop(domain, None) is not None:
+        nodeapp.remove(domain)
     cfg.get("git", {}).pop(domain, None)
     cfg.get("apps", {}).pop(domain, None)
     cfg.get("backup_schedule", {}).pop(domain, None)
@@ -466,6 +470,12 @@ def git_done(domain):
         # worker harus dimuat ulang agar memakai kode terbaru
         if ok and laravel_status(domain)["queue"]:
             run(["systemctl", "restart", queue_unit(domain)])
+        n = cfg.get("node", {}).get(domain)
+        if ok and n and nodeapp.status(domain)["enabled"]:
+            if n.get("auto_install", True):
+                nodeapp.task(WWW, domain, n, ["install", "build"])
+            else:
+                nodeapp.control(domain, "restart")
     return cb
 
 
@@ -834,7 +844,8 @@ def logs():
 def free_sites():
     """Website yang belum dipakai Git/aplikasi (bisa dipasangi aplikasi)."""
     return [x["domain"] for x in list_sites()
-            if x["domain"] not in cfg.get("git", {}) and x["domain"] not in cfg.get("apps", {})]
+            if x["domain"] not in cfg.get("git", {}) and x["domain"] not in cfg.get("apps", {})
+            and x["domain"] not in cfg.get("node", {})]
 
 
 def app_done(domain):
@@ -876,8 +887,8 @@ def apps_page():
             flash("Pilih aplikasi", "error")
         elif not DOMAIN_RE.match(domain):
             flash("Nama domain tidak valid", "error")
-        elif domain in cfg.get("git", {}) or domain in cfg.get("apps", {}):
-            flash(f"{domain} sudah dipakai Git deploy / aplikasi lain", "error")
+        elif domain in cfg.get("git", {}) or domain in cfg.get("apps", {}) or domain in cfg.get("node", {}):
+            flash(f"{domain} sudah dipakai Git deploy / aplikasi lain / Node.js", "error")
         elif recipe["admin"] and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", admin["email"]):
             flash("Email admin tidak valid", "error")
         elif recipe["admin"] and not re.match(r"^[A-Za-z0-9_.-]{3,32}$", admin["user"]):
@@ -923,6 +934,188 @@ def app_detail(domain):
         a["status"] = "failed"  # panel di-restart saat instalasi berjalan
     return render_template("app_detail.html", domain=domain, a=a, recipe=appmgr.CATALOG[a["app"]],
                            running=running, log=appmgr.read_log(domain), url=site_url(domain))
+
+
+# ---------- node.js ----------
+def set_vhost(domain, text):
+    conf = NGINX_AVAIL / f"{SITE_PREFIX}{domain}.conf"
+    old = conf.read_text()
+    conf.write_text(text)
+    rc, out = run(["nginx", "-t"])
+    if rc != 0:
+        conf.write_text(old)
+        raise RuntimeError(out)
+    run(["systemctl", "reload", "nginx"])
+
+
+def php_vhost(domain):
+    """Vhost PHP biasa (dipakai lagi saat Node.js dilepas): root repo Git bila ada, selain itu public_html."""
+    g = cfg.get("git", {}).get(domain)
+    root = WWW / domain / "public_html"
+    if g:
+        rd = gitdeploy.repo_dir(WWW, domain)
+        root = rd / g["subdir"] if g.get("subdir") else rd
+    return VHOST.format(domain=domain, root=root)
+
+
+def node_apply(domain, n):
+    """Tulis service systemd + vhost proxy nginx sesuai pengaturan."""
+    nodeapp.write_service(WWW, domain, n)
+    nodeapp.ensure_nginx_map()
+    set_vhost(domain, nodeapp.vhost(domain, n))
+
+
+def node_form(n, domain):
+    """Baca form pengaturan Node.js ke n. Kembalikan pesan error atau None."""
+    version = request.form.get("version", "system")
+    rel = request.form.get("dir", "").strip().strip("/")
+    start = request.form.get("start", "").strip()
+    env, err = nodeapp.parse_env(request.form.get("env", ""))
+    if version not in dict(nodeapp.runtimes()):
+        return "Versi Node.js belum terpasang"
+    if not rel or not gitdeploy.SUBDIR_RE.match(rel) or ".." in rel.split("/"):
+        return "Folder aplikasi tidak valid (contoh: nodeapp atau repo)"
+    if "\n" in start or "\r" in start or len(start) > 300:
+        return "Perintah start harus satu baris"
+    if err:
+        return err
+    n.update(version=version, dir=str(WWW / domain / rel), start=start, env=env,
+             auto_install=request.form.get("auto_install") == "1")
+    return None
+
+
+@app.route("/node", methods=["GET", "POST"])
+@login_required
+def node_page():
+    nodes = cfg.setdefault("node", {})
+    if request.method == "POST":
+        domain = form_domain()
+        n = {"port": None, "db": None}
+        err = node_form(n, domain) if DOMAIN_RE.match(domain) else "Nama domain tidak valid"
+        if not err and (domain in nodes or domain in cfg.get("apps", {})):
+            err = f"{domain} sudah dipakai aplikasi Node.js / aplikasi lain"
+        if not err and not site_exists(domain):
+            publish = request.form.get("publish") == "1" and in_cf_zone(domain)
+            err = (publish and publish_conflict(domain)) or create_site(domain)
+            if not err and publish and (msg := publish_site(domain)):
+                flash(msg[1], msg[0])
+        if err:
+            flash(err, "error")
+            return redirect(url_for("node_page"))
+        app_dir = Path(n["dir"])
+        if request.form.get("starter") == "1" and nodeapp.starter(app_dir):
+            flash("Contoh aplikasi (server.js) dibuat. Ganti dengan aplikasi Anda lewat File Manager atau Git.", "ok")
+        app_dir.mkdir(parents=True, exist_ok=True)
+        fix_owner(WWW / domain)
+        n["start"] = n["start"] or nodeapp.guess_start(app_dir)
+        n["port"] = nodeapp.free_port({x["port"] for x in nodes.values()})
+        nodes[domain] = n
+        save_config()
+        if request.form.get("make_db") == "1":
+            site_db(domain, "node")()
+        try:
+            node_apply(domain, n)
+        except RuntimeError as e:
+            flash(f"Konfigurasi nginx gagal: {e}", "error")
+        if (app_dir / "package.json").exists():
+            nodeapp.task(WWW, domain, n, ["install", "build"])
+            flash(f"Aplikasi Node.js {domain} dibuat. npm install & start berjalan…", "ok")
+        else:
+            flash(f"Aplikasi Node.js {domain} dibuat. Unggah aplikasi (package.json) ke {app_dir}, lalu klik npm install.", "ok")
+        return redirect(url_for("node_detail", domain=domain))
+    rows = [{"domain": d, **n, "st": nodeapp.status(d), "running": nodeapp.is_running(d)} for d, n in sorted(nodes.items())]
+    runtimes = nodeapp.runtimes()
+    free = [x["domain"] for x in list_sites() if x["domain"] not in nodes and x["domain"] not in cfg.get("apps", {})]
+    return render_template("node.html", rows=rows, runtimes=runtimes, majors=nodeapp.MAJORS,
+                           installed={k for k, _ in runtimes}, used={n["version"] for n in nodes.values()},
+                           busy=nodeapp.runtime_busy(), rlog=nodeapp.runtime_log(), free=free, zones=cf_zones(),
+                           cf_on=cf_enabled(), cf_auto=cfg.get("cf_auto", True))
+
+
+@app.post("/node/runtime")
+@login_required
+def node_runtime():
+    major = request.form.get("major", "")
+    if request.form.get("action") == "remove":
+        if any(n["version"] == major for n in cfg.get("node", {}).values()):
+            flash(f"Node.js {major} masih dipakai aplikasi", "error")
+        else:
+            nodeapp.remove_runtime(major)
+            flash(f"Node.js {major} dihapus", "ok")
+    elif major.isdigit() and nodeapp.install_runtime(major):
+        flash(f"Mengunduh Node.js {major}…", "ok")
+    else:
+        flash("Unduhan lain masih berjalan", "error")
+    return redirect(url_for("node_page") + "#versi")
+
+
+@app.route("/node/<domain>", methods=["GET", "POST"])
+@login_required
+def node_detail(domain):
+    n = cfg.get("node", {}).get(domain)
+    if not n:
+        abort(404)
+    if request.method == "POST":
+        act = request.form.get("action")
+        if act == "save":
+            new = dict(n)
+            err = node_form(new, domain) or (None if new["start"] else "Perintah start wajib diisi")
+            if err:
+                flash(err, "error")
+            else:
+                n.update(new)
+                save_config()
+                Path(n["dir"]).mkdir(parents=True, exist_ok=True)
+                fix_owner(Path(n["dir"]))
+                try:
+                    node_apply(domain, n)
+                    on = nodeapp.status(domain)["enabled"]
+                    if on:
+                        nodeapp.control(domain, "restart")
+                    flash("Pengaturan disimpan" + (" dan aplikasi di-restart" if on else ""), "ok")
+                except RuntimeError as e:
+                    flash(f"Konfigurasi nginx gagal: {e}", "error")
+        elif act in ("start", "stop", "restart"):
+            rc, out = nodeapp.control(domain, act)
+            flash(f"{act}: " + ("berhasil" if rc == 0 else out), "ok" if rc == 0 else "error")
+        elif act in ("install", "build", "script"):
+            steps = {"install": ["install"], "build": ["install", "build"]}.get(act)
+            if act == "script":
+                name = request.form.get("script", "")
+                steps = [f"run:{name}"] if name in nodeapp.scripts(Path(n["dir"])) else None
+            if not steps:
+                flash("Skrip tidak ditemukan di package.json", "error")
+            elif nodeapp.task(WWW, domain, n, steps, restart=act != "script"):
+                flash("Dijalankan…", "ok")
+            else:
+                flash("Proses lain masih berjalan", "error")
+        elif act == "db" and not n.get("db"):
+            site_db(domain, "node")()
+            nodeapp.write_service(WWW, domain, n)
+            if nodeapp.status(domain)["enabled"]:
+                nodeapp.control(domain, "restart")
+            flash("Database dibuat dan dimasukkan ke environment aplikasi", "ok")
+        elif act == "remove":
+            cfg["node"].pop(domain)
+            save_config()
+            try:
+                set_vhost(domain, php_vhost(domain))
+            except RuntimeError as e:
+                flash(f"Konfigurasi nginx gagal: {e}", "error")
+            time.sleep(1)  # beri waktu worker nginx lama selesai sebelum aplikasi dimatikan
+            nodeapp.remove(domain)
+            flash(f"Node.js dilepas dari {domain}. Website kembali memakai PHP; folder aplikasi & database tetap ada.", "ok")
+            return redirect(url_for("node_page"))
+        return redirect(url_for("node_detail", domain=domain))
+    app_dir = Path(n["dir"])
+    site = WWW / domain
+    return render_template("node_detail.html", domain=domain, n=n, st=nodeapp.status(domain),
+                           runtimes=nodeapp.runtimes(), scripts=nodeapp.scripts(app_dir),
+                           has_pkg=(app_dir / "package.json").exists(), running=nodeapp.is_running(domain),
+                           log=nodeapp.read_log(domain), journal=nodeapp.journal(domain),
+                           env_text=nodeapp.env_text(n.get("env", {})), db_env=nodeapp.db_env(n.get("db")),
+                           url=site_url(domain), git=cfg.get("git", {}).get(domain),
+                           rel_dir=str(app_dir.relative_to(site)) if site in app_dir.parents else n["dir"])
 
 
 # ---------- backup & restore ----------
@@ -1090,6 +1283,21 @@ def restore_job(path, target, overwrite, publish, cleanup):
         if m.get("app_cron"):
             app_cron_file(new).write_text(m["app_cron"].replace(f"/var/www/{old}", f"/var/www/{new}"))
         run(["chown", "-R", "www-data:www-data", str(WWW / new)])
+        if m.get("node"):
+            n = fix(m["node"])
+            if n.get("db"):
+                n["db"] = dbmap.get(n["db"]["name"], n["db"])
+            if not nodeapp.node_version(n["version"]):
+                say(f"Node.js versi {n['version']} belum terpasang di server ini, memakai versi sistem")
+                n["version"] = "system"
+            used = {x["port"] for d, x in cfg.get("node", {}).items() if d != new}
+            if n["port"] in used:
+                n["port"] = nodeapp.free_port(used)
+            cfg.setdefault("node", {})[new] = n
+            save_config()
+            node_apply(new, n)
+            say(f"Node.js: npm install & start di port {n['port']} (lihat menu Node.js)")
+            nodeapp.task(WWW, new, n, ["install", "build"])
 
         # penyesuaian per aplikasi
         app_id = (m.get("app") or {}).get("app")

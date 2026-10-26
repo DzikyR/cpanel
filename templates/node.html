@@ -1,0 +1,50 @@
+{% extends "base.html" %}{% from "_domain.html" import domain_picker %}{% block title %}Node.js{% endblock %}{% block content %}
+<div class="card"><h2>Buat Aplikasi Node.js</h2>
+<form method="post" autocomplete="off"><input type="hidden" name="csrf" value="{{ csrf }}">
+<table class="form">
+<tr><td class="muted" style="width:170px">Domain</td><td>{{ domain_picker(zones, "node-free", "contoh: api.tokoku.test") }}
+<datalist id="node-free">{% for d in free %}<option value="{{ d }}">{% endfor %}</datalist>
+<div class="muted">Website baru dibuat otomatis. Website yang sudah ada{% if free %} ({{ free|join(', ') }}){% endif %} juga bisa diubah menjadi Node.js lewat "domain lain…".</div></td></tr>
+<tr><td class="muted">Versi Node.js</td><td><select name="version">{% for k, label in runtimes %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select>
+<a href="#versi" class="muted">+ versi lain</a></td></tr>
+<tr><td class="muted">Folder aplikasi</td><td><code>/var/www/&lt;domain&gt;/</code><input name="dir" value="nodeapp" required style="width:160px">
+<div class="muted">Isi <code>repo</code> bila kode ditarik lewat Git Deploy.</div></td></tr>
+<tr><td class="muted">Perintah start</td><td><input name="start" placeholder="kosongkan = otomatis (npm start / node server.js)" style="min-width:340px;font-family:ui-monospace,monospace">
+<div class="muted">Contoh: <code>npm start</code>, <code>node app.js</code>, <code>node .output/server/index.mjs</code> (Nuxt), <code>npx next start</code>. Aplikasi wajib mendengarkan <code>process.env.PORT</code>.</div></td></tr>
+<tr><td class="muted">Environment</td><td><textarea name="env" rows="3" style="width:100%;max-width:520px;font-family:ui-monospace,monospace" placeholder="KEY=VALUE per baris (opsional)"></textarea></td></tr>
+<tr><td></td><td>
+<label><input type="checkbox" name="starter" value="1" checked> Buat contoh aplikasi bila folder kosong</label><br>
+<label><input type="checkbox" name="make_db" value="1"> Buat database MySQL (kredensial masuk ke environment)</label><br>
+<label><input type="checkbox" name="auto_install" value="1" checked> Setelah Git deploy: npm install + build + restart otomatis</label>
+{% if cf_on %}<br><label><input type="checkbox" name="publish" value="1" {{ 'checked' if cf_auto }}> Publikasikan via Cloudflare (domain baru)</label>{% endif %}
+</td></tr></table>
+<p><button>🟢 Buat Aplikasi</button></p></form></div>
+
+<div class="card"><h2>Aplikasi Node.js</h2><div class="table-wrap"><table>
+<tr><th>Domain</th><th>Status</th><th>Node</th><th>Port</th><th>Perintah</th><th>Aksi</th></tr>
+{% for x in rows %}<tr>
+<td><a href="http://{{ x.domain }}" target="_blank">{{ x.domain }}</a></td>
+<td>{% if x.running %}<span class="badge">⏳ npm…</span>{% else %}<span class="badge {{ x.st.state }}">{{ x.st.state }}</span>{% endif %}</td>
+<td>{{ x.version }}</td><td><code>{{ x.port }}</code></td><td><code>{{ x.start }}</code></td>
+<td class="row"><a class="btn btn-sm btn-gray" href="/node/{{ x.domain }}">Kelola</a>
+<form method="post" action="/node/{{ x.domain }}" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}">
+<button name="action" value="restart" class="btn-sm btn-green">Restart</button></form></td>
+</tr>{% else %}<tr><td colspan="6" class="muted">Belum ada aplikasi Node.js.</td></tr>{% endfor %}
+</table></div></div>
+
+<div class="card" id="versi"><h2>Versi Node.js</h2>
+<div class="table-wrap"><table><tr><th>Versi</th><th>Status</th><th>Aksi</th></tr>
+{% for k, label in runtimes if k == 'system' %}<tr><td>Sistem</td><td>{{ label }}</td><td class="muted">dari paket apt</td></tr>{% endfor %}
+{% for m in majors %}<tr><td>Node.js {{ m }} LTS</td>
+<td>{% for k, label in runtimes if k == m|string %}<span class="badge on">{{ label }}</span>{% else %}<span class="muted">belum terpasang</span>{% endfor %}</td>
+<td class="row"><form method="post" action="/node/runtime" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="major" value="{{ m }}">
+{% if m|string in installed %}<button class="btn-sm btn-gray" {{ 'disabled' if busy }}>Perbarui</button>
+{% if m|string not in used %}<button name="action" value="remove" class="btn-sm btn-red" onclick="return confirm('Hapus Node.js {{ m }}?')">Hapus</button>{% endif %}
+{% else %}<button class="btn-sm btn-green" {{ 'disabled' if busy }}>Pasang</button>{% endif %}</form></td></tr>{% endfor %}
+</table></div>
+<p class="muted">Rilis resmi dari nodejs.org dipasang di <code>/opt/localpanel/node/&lt;versi&gt;</code>, tidak mengganggu Node sistem. Tiap aplikasi bisa memakai versi berbeda.</p>
+{% if busy %}<p>⏳ Mengunduh… <a href="#versi" onclick="location.reload()">refresh</a></p>{% endif %}
+{% if rlog %}<details {{ 'open' if busy }}><summary>Log unduhan terakhir</summary><pre>{{ rlog }}</pre></details>{% endif %}
+</div>
+{% if busy %}<script>setTimeout(function(){location.reload()},5000);</script>{% endif %}
+{% endblock %}

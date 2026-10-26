@@ -6,6 +6,7 @@ deploy-logs/
 # unduhan yang bisa dibuat ulang
 cache/
 bin/
+node/
 __pycache__/
 *.pyc
 *.bak

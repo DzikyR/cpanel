@@ -3,12 +3,13 @@
 #  LocalPanel installer — panel hosting ala cPanel (Nginx + PHP-FPM + MariaDB)
 #
 #  Pemakaian (sebagai root, di Ubuntu/Debian):
-#    git clone https://github.com/brakekek/localpanel.git /opt/localpanel
+#    git clone https://github.com/DzikyR/cpanel.git /opt/localpanel
 #    cd /opt/localpanel && bash install.sh [--tunnel-token TOKEN] [--port 2083] [--no-node]
 #
 #  --tunnel-token TOKEN  pasang Cloudflare Tunnel (token dari Zero Trust → Networks → Tunnels)
 #  --port PORT           port panel (bawaan 2083)
-#  --no-node             lewati Node.js (dibutuhkan untuk npm build aplikasi Laravel/Vite)
+#  --no-node             lewati Node.js sistem (untuk npm build Laravel/Vite & aplikasi Node.js;
+#                        versi lain tetap bisa diunduh dari menu Node.js)
 #
 #  Aman dijalankan ulang: pengaturan & password yang sudah ada tidak ditimpa.
 # =============================================================================
@@ -21,7 +22,7 @@ while [ $# -gt 0 ]; do
     --tunnel-token) TUNNEL_TOKEN="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
     --no-node) NODE=0; shift ;;
-    -h|--help) sed -n 2,14p "$0"; exit 0 ;;
+    -h|--help) sed -n 2,15p "$0"; exit 0 ;;
     *) echo "Opsi tidak dikenal: $1"; exit 1 ;;
   esac
 done
@@ -72,6 +73,7 @@ sed 's/^memory_limit = .*/memory_limit = -1/' "$DIR/deploy/php-localpanel.ini" \
 
 say "Konfigurasi Nginx"
 cp "$DIR/deploy/nginx-cloudflare-tunnel.conf" /etc/nginx/conf.d/cloudflare-tunnel.conf
+cp "$DIR/deploy/nginx-localpanel-node.conf" /etc/nginx/conf.d/localpanel-node.conf
 mkdir -p /var/www
 nginx -t
 

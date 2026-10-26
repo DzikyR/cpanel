@@ -14,7 +14,7 @@
 <td><a href="http://{{ x.domain }}" target="_blank">{{ x.domain }}</a></td>
 <td><span class="badge {{ 'on' if x.enabled else 'off' }}">{{ 'Aktif' if x.enabled else 'Nonaktif' }}</span></td>
 {% if cf_on %}<td>{% if x.domain in public %}<a href="https://{{ x.domain }}" target="_blank"><span class="badge on">🌍 Online</span></a>{% elif x.publishable %}<span class="badge off">Lokal</span>{% else %}<span class="badge off" title="Domain tidak ada di akun Cloudflare">Lokal saja</span>{% endif %}</td>{% endif %}
-<td>{% if x.git %}<a href="/files?p={{ x.domain }}/repo">⎇ <code>{{ x.git.repo.split('/')[-1] }}</code> ({{ x.git.branch }})</a>{% else %}<a href="/files?p={{ x.domain }}/public_html"><code>{{ x.root }}</code></a>{% endif %}</td>
+<td>{% if x.node %}<a href="/node/{{ x.domain }}">🟢 Node.js <code>:{{ x.node.port }}</code></a>{% if x.git %} · ⎇ <code>{{ x.git.repo.split('/')[-1] }}</code>{% endif %}{% elif x.git %}<a href="/files?p={{ x.domain }}/repo">⎇ <code>{{ x.git.repo.split('/')[-1] }}</code> ({{ x.git.branch }})</a>{% else %}<a href="/files?p={{ x.domain }}/public_html"><code>{{ x.root }}</code></a>{% endif %}</td>
 <td class="row">
 <form method="post" action="/sites/{{ x.domain }}/toggle" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-sm btn-gray">{{ 'Nonaktifkan' if x.enabled else 'Aktifkan' }}</button></form>
 <a class="btn btn-sm {{ 'btn-green' if x.git else 'btn-gray' }}" href="/sites/{{ x.domain }}/git">{{ '⎇ Git' if x.git else 'Hubungkan Git' }}</a>
