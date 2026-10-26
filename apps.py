@@ -332,6 +332,57 @@ def install_drupal(ctx):
     return {"root": app / "web", "admin_url": f"{ctx.url}/user/login"}
 
 
+ROUNDCUBE_CONF = """<?php
+// Dikelola oleh LocalPanel: webmail untuk mail server lokal (Dovecot IMAP + Postfix submission di localhost)
+$config = [];
+$config['db_dsnw'] = 'sqlite:///{db}?mode=0640';
+$config['imap_host'] = 'localhost:143';
+$config['smtp_host'] = 'localhost:587';
+$config['smtp_user'] = '%u';
+$config['smtp_pass'] = '%p';
+$config['product_name'] = '{title}';
+$config['des_key'] = '{key}';
+$config['plugins'] = ['archive', 'zipdownload', 'markasjunk'];
+$config['skin'] = 'elastic';
+$config['language'] = '{lang}';
+$config['proxy_whitelist'] = ['127.0.0.1', '::1'];
+$config['enable_installer'] = false;
+$config['support_url'] = '';
+$config['login_lc'] = 2;
+"""
+
+
+def install_roundcube(ctx):
+    # versi terbaru dari redirect halaman rilis (tanpa API GitHub yang dibatasi)
+    with urllib.request.urlopen(urllib.request.Request(
+            "https://github.com/roundcube/roundcubemail/releases/latest", headers={"User-Agent": "LocalPanel"}),
+            timeout=30) as r:
+        ctx.version = r.geturl().rstrip("/").rsplit("/", 1)[-1]
+    code = ctx.site / "roundcube"
+    data = ctx.site / "roundcube-data"
+    if code.exists() and any(code.iterdir()):
+        raise RuntimeError(f"{code} tidak kosong")
+    pkg = ctx.site / ".roundcube.tar.gz"
+    ctx.download(f"https://github.com/roundcube/roundcubemail/releases/download/{ctx.version}/"
+                 f"roundcubemail-{ctx.version}-complete.tar.gz", pkg)
+    ctx.extract(pkg, code)
+    pkg.unlink()
+    data.mkdir(exist_ok=True)
+    title = ctx.admin["title"].replace("\\", "").replace("'", "")
+    (code / "config" / "config.inc.php").write_text(ROUNDCUBE_CONF.format(
+        db=data / "roundcube.db", title=title, key=secrets.token_urlsafe(18)[:24],
+        lang="id_ID" if ctx.admin.get("lang") == "id" else "en_US"))
+    shutil.rmtree(code / "installer", ignore_errors=True)
+    subprocess.run(["chown", "-R", "www-data:www-data", str(ctx.site)])
+    # driver SQLite Roundcube membuat tabelnya sendiri saat koneksi pertama; cek konfigurasi & database sekarang
+    ctx.step("cek webmail", ["sudo", "-u", "www-data", PHP, "-r",
+                             "define('INSTALL_PATH', getcwd().'/'); require 'program/include/clisetup.php';"
+                             "$db = rcmail::get_instance()->get_dbh(); $db->db_connect('w');"
+                             "if ($db->is_error()) { fwrite(STDERR, $db->is_error()); exit(1); } echo \"OK\\n\";"],
+             cwd=code)
+    return {"root": code / "public_html", "admin_url": ctx.url}
+
+
 CATALOG = {
     "wordpress": {"name": "WordPress", "icon": "📝", "db": True, "admin": True, "fn": install_wordpress,
                   "desc": "Website, blog, dan company profile. CMS paling populer."},
@@ -347,6 +398,8 @@ CATALOG = {
                "desc": "CMS enterprise untuk portal besar, kampus & pemerintahan."},
     "slims": {"name": "SLiMS", "icon": "📖", "db": True, "admin": True, "fn": install_slims, "sample": True,
               "desc": "Senayan Library Management System: otomasi perpustakaan & OPAC."},
+    "roundcube": {"name": "Webmail", "icon": "✉️", "db": False, "admin": False, "fn": install_roundcube,
+                  "desc": "Roundcube: buka email kotak surat LocalPanel lewat browser (login dengan alamat email)."},
     "phpmyadmin": {"name": "phpMyAdmin", "icon": "🗄️", "db": False, "admin": False, "fn": install_phpmyadmin,
                    "desc": "Kelola database lewat browser. Login dengan user database website."},
 }

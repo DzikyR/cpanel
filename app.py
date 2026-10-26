@@ -15,6 +15,8 @@ import cloudflare as cfapi
 import gitdeploy
 import nodeapp
 import pgsql
+import mailsrv
+import brevo
 
 BASE = Path(__file__).resolve().parent
 CONFIG = BASE / "config.json"
@@ -24,7 +26,8 @@ NGINX_ENABLED = Path("/etc/nginx/sites-enabled")
 SITE_PREFIX = "lp-"  # nama file vhost yang dikelola panel
 # versi PHP-FPM terpasang (mis. 8.5 di Ubuntu 26.04, 8.3 di Ubuntu 24.04)
 PHP_VER = (sorted(Path(p).parent.name for p in glob.glob("/etc/php/*/fpm")) or ["8.3"])[-1]
-SERVICES = ["nginx", "mariadb", f"php{PHP_VER}-fpm", "ssh", "cron"] + (["postgresql"] if pgsql.available() else [])
+SERVICES = (["nginx", "mariadb", f"php{PHP_VER}-fpm", "ssh", "cron"] + (["postgresql"] if pgsql.available() else [])
+            + (["postfix", "dovecot"] if mailsrv.installed() else []))
 DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 DBNAME_RE = re.compile(r"^[a-zA-Z0-9_]{1,64}$")
 
@@ -62,7 +65,7 @@ def login_required(f):
 
 @app.before_request
 def csrf_protect():
-    if request.method == "POST" and request.endpoint not in ("login", "git_hook"):
+    if request.method == "POST" and request.endpoint not in ("login", "git_hook", "mail_inbound"):
         if request.form.get("csrf") != session.get("csrf"):
             abort(400, "CSRF token tidak valid")
 
@@ -425,6 +428,7 @@ def remove_site_data(domain, drop_db):
     app_cron_file(domain).unlink(missing_ok=True)
     if cfg.get("node", {}).pop(domain, None) is not None:
         nodeapp.remove(domain)
+    mail_remove(domain, drop_db)
     cfg.get("git", {}).pop(domain, None)
     cfg.get("apps", {}).pop(domain, None)
     cfg.get("backup_schedule", {}).pop(domain, None)
@@ -1190,6 +1194,257 @@ def node_detail(domain):
                            rel_dir=str(app_dir.relative_to(site)) if site in app_dir.parents else n["dir"])
 
 
+# ---------- email ----------
+WORKER = "localpanel-mail"
+QUOTAS = ["250M", "500M", "1G", "2G", "5G", "10G"]
+
+
+def mail_cfg():
+    return cfg.setdefault("mail", {"domains": {}})
+
+
+def webmail_sites():
+    return [d for d, a in sorted(cfg.get("apps", {}).items()) if a.get("app") == "roundcube" and a.get("status") == "ok"]
+
+
+def mail_addresses(domain):
+    dm = mail_cfg()["domains"][domain]
+    return sorted({f"{l}@{domain}" for l in dm.get("mailboxes", {})} |
+                  {f"{l}@{domain}" for l in dm.get("forwards", {}) if l != "*"})
+
+
+def mail_rules(domain):
+    """Samakan aturan Cloudflare Email Routing dengan kotak surat & forwarder domain ini."""
+    dm = mail_cfg()["domains"][domain]
+    try:
+        c = cf()
+        c.email_sync(domain, mail_addresses(domain), WORKER)
+        if c.find_zone(domain)[1] == domain:
+            c.email_catch_all(domain, WORKER if "*" in dm.get("forwards", {}) else None)
+        dm["cf"] = {"ok": True, "time": time.strftime("%Y-%m-%d %H:%M")}
+    except cfapi.CFError as e:
+        dm["cf"] = {"ok": False, "err": str(e), "time": time.strftime("%Y-%m-%d %H:%M")}
+    save_config()
+    return dm["cf"]
+
+
+def mail_cloud(domain):
+    """Siapkan domain di Cloudflare (Email Routing, MX, SPF, DMARC) dan Brevo (DKIM). Kembalikan daftar pesan."""
+    m, msgs = mail_cfg(), []
+    dm = m["domains"][domain]
+    try:
+        c = cf()
+        st = c.email_status(domain)
+        if not any(x.endswith(".mx.cloudflare.net") for x in st["mx"]):
+            c.email_enable(domain)
+            msgs.append(("ok", "Email Routing Cloudflare diaktifkan (MX dibuat)"))
+        if (m.get("relay") or {}).get("user"):
+            c.spf_include(domain, "spf.brevo.com")
+        if not any(t.startswith("v=DMARC1") for t in c.txt(f"_dmarc.{domain}")):
+            c.ensure_txt(f"_dmarc.{domain}", "v=DMARC1; p=none", "v=DMARC1")
+    except cfapi.CFError as e:
+        msgs.append(("error", f"Cloudflare: {e}"))
+    if m.get("brevo_key"):
+        try:
+            info = brevo.domain(m["brevo_key"], domain) or brevo.add_domain(m["brevo_key"], domain)
+            c = cf()
+            for typ, name, value in brevo.records(info, domain):
+                if typ == "CNAME":
+                    c.ensure_cname_dns(name, value)
+                elif value.startswith("v=spf1"):
+                    c.spf_include(domain, "spf.brevo.com")
+                elif value.startswith("v=DMARC1"):
+                    continue  # DMARC sudah diatur di atas; jangan timpa kebijakan pemilik domain
+                else:
+                    c.ensure_txt(name, value, value.split(":", 1)[0] if value.startswith("brevo-code") else value.split(";", 1)[0])
+            info = brevo.authenticate(m["brevo_key"], domain) or info
+            dm["brevo"] = {"ok": bool(info.get("authenticated")), "time": time.strftime("%Y-%m-%d %H:%M")}
+            msgs.append(("ok" if dm["brevo"]["ok"] else "error", "Brevo: domain " + (
+                "terautentikasi (DKIM/SPF)" if dm["brevo"]["ok"] else "belum terverifikasi; DNS mungkin perlu beberapa menit, klik Sinkronkan lagi")))
+        except (brevo.BrevoError, cfapi.CFError) as e:
+            dm["brevo"] = {"ok": False, "err": str(e), "time": time.strftime("%Y-%m-%d %H:%M")}
+            msgs.append(("error", f"Brevo: {e}"))
+    r = mail_rules(domain)
+    if not r["ok"]:
+        msgs.append(("error", f"Aturan Email Routing: {r['err']}"))
+    return msgs
+
+
+def mail_remove(domain, wipe):
+    m = mail_cfg()
+    if domain not in m["domains"]:
+        return
+    m["domains"][domain]["mailboxes"], m["domains"][domain]["forwards"] = {}, {}
+    if cf_enabled():
+        mail_rules(domain)
+    m["domains"].pop(domain)
+    save_config()
+    mailsrv.render(m)
+    if wipe:
+        shutil.rmtree(mailsrv.maildir(domain), ignore_errors=True)
+
+
+def mail_ready():
+    m = mail_cfg()
+    if not m.get("ready"):
+        zone = (cf_zones() or ["localdomain"])[0]
+        mailsrv.setup(f"mail.{zone}")
+        m["ready"] = True
+        m.setdefault("secret", secrets.token_hex(24))
+        save_config()
+
+
+@app.route("/mail", methods=["GET", "POST"])
+@login_required
+def mail_page():
+    m = mail_cfg()
+    if request.method == "POST":
+        act = request.form.get("action")
+        try:
+            if act == "relay":
+                user, pw, key = (request.form.get(k, "").strip() for k in ("user", "password", "api_key"))
+                if key and key != m.get("brevo_key"):
+                    flash(f"API key Brevo valid ({brevo.account(key)})", "ok")
+                m["relay"] = {"user": user, "password": pw or (m.get("relay") or {}).get("password", "")} if user else {}
+                m["brevo_key"] = key
+                save_config()
+                if m.get("ready"):
+                    mailsrv.render(m)
+                flash("Pengaturan pengiriman disimpan", "ok")
+            elif act == "worker":
+                mail_ready()
+                proto = request.headers.get("X-Forwarded-Proto", request.scheme)
+                m["endpoint"] = f"https://{request.host}/mail/inbound" if proto == "https" else request.form.get("endpoint", "")
+                if not m["endpoint"].startswith("https://"):
+                    raise ValueError("Buka panel lewat domain https (Cloudflare) agar Worker tahu alamat panel")
+                js = (BASE / "deploy" / "mail-worker.js").read_text()
+                cf().put_worker(WORKER, js, [{"type": "plain_text", "name": "ENDPOINT", "text": m["endpoint"]},
+                                             {"type": "secret_text", "name": "SECRET", "text": m["secret"]}])
+                m["worker"] = time.strftime("%Y-%m-%d %H:%M")
+                save_config()
+                flash(f"Email Worker dipasang: email masuk diteruskan ke {m['endpoint']}", "ok")
+            elif act == "add":
+                domain = request.form.get("domain", "").strip().lower()
+                if not DOMAIN_RE.match(domain) or not in_cf_zone(domain):
+                    raise ValueError("Pilih domain yang ada di akun Cloudflare")
+                if domain in m["domains"]:
+                    raise ValueError(f"{domain} sudah aktif")
+                mail_ready()
+                m["domains"][domain] = {"mailboxes": {}, "forwards": {}, "created": time.strftime("%Y-%m-%d %H:%M")}
+                save_config()
+                mailsrv.render(m)
+                for cat, msg in mail_cloud(domain):
+                    flash(msg, cat)
+                flash(f"Email untuk {domain} diaktifkan. Buat kotak surat di bawah.", "ok")
+                return redirect(url_for("mail_domain", domain=domain))
+        except (ValueError, RuntimeError, cfapi.CFError, brevo.BrevoError) as e:
+            flash(str(e), "error")
+        return redirect(url_for("mail_page"))
+    rows = [{"domain": d, "boxes": len(dm.get("mailboxes", {})), "fwds": len(dm.get("forwards", {})),
+             "cf": dm.get("cf"), "brevo": dm.get("brevo")} for d, dm in sorted(m["domains"].items())]
+    choices = sorted({x["domain"] for x in list_sites()} | set(cf_zones()))
+    choices = [d for d in choices if d not in m["domains"] and in_cf_zone(d)]
+    svc = {s: run(["systemctl", "is-active", s])[1] for s in ("postfix", "dovecot")}
+    return render_template("mail.html", m=m, rows=rows, choices=choices, webmail=webmail_sites(), svc=svc,
+                           installed=mailsrv.installed(), cf_on=cf_enabled(), queue=mailsrv.queue())
+
+
+@app.route("/mail/<domain>", methods=["GET", "POST"])
+@login_required
+def mail_domain(domain):
+    m = mail_cfg()
+    dm = m["domains"].get(domain)
+    if dm is None:
+        abort(404)
+    boxes, fwds = dm.setdefault("mailboxes", {}), dm.setdefault("forwards", {})
+    if request.method == "POST":
+        act = request.form.get("action")
+        local = request.form.get("local", "").strip().lower()
+        pw = request.form.get("password", "")
+        quota = request.form.get("quota", "1G")
+        rules = False
+        try:
+            if act in ("add_box", "add_fwd") and local != "*" and not mailsrv.LOCAL_RE.match(local):
+                raise ValueError("Nama alamat hanya huruf kecil, angka, titik, strip, underscore")
+            if act in ("add_box", "passwd") and len(pw) < 8:
+                raise ValueError("Password minimal 8 karakter")
+            if quota not in QUOTAS:
+                raise ValueError("Kuota tidak valid")
+            if act == "add_box":
+                if local in boxes:
+                    raise ValueError(f"{local}@{domain} sudah ada")
+                boxes[local] = {"hash": mailsrv.hash_password(pw), "quota": quota, "created": time.strftime("%Y-%m-%d")}
+                rules = True
+                flash(f"Kotak surat {local}@{domain} dibuat", "ok")
+            elif act == "passwd" and local in boxes:
+                boxes[local]["hash"] = mailsrv.hash_password(pw)
+                flash(f"Password {local}@{domain} diganti", "ok")
+            elif act == "quota" and local in boxes:
+                boxes[local]["quota"] = quota
+                flash(f"Kuota {local}@{domain}: {quota}", "ok")
+            elif act == "del_box" and local in boxes:
+                boxes.pop(local)
+                mailsrv.remove_mailbox(domain, local)
+                rules = True
+                flash(f"Kotak surat {local}@{domain} dan isinya dihapus", "ok")
+            elif act == "add_fwd":
+                dests = [x.strip().lower() for x in re.split(r"[\s,;]+", request.form.get("dests", "")) if x.strip()]
+                if not dests or not all(re.match(r"^[^@\s]+@[a-z0-9.-]+\.[a-z]{2,}$", x) for x in dests):
+                    raise ValueError("Tujuan harus alamat email yang valid (pisahkan dengan koma)")
+                if local == "*" and cf().find_zone(domain)[1] != domain:
+                    raise ValueError("Catch-all hanya untuk domain utama, bukan subdomain")
+                fwds[local] = dests
+                rules = True
+                flash(f"Forwarder {'semua alamat lain' if local == '*' else local + '@' + domain} → {', '.join(dests)}", "ok")
+            elif act == "del_fwd" and local in fwds:
+                fwds.pop(local)
+                rules = True
+                flash("Forwarder dihapus", "ok")
+            elif act == "sync":
+                for cat, msg in mail_cloud(domain):
+                    flash(msg, cat)
+            elif act == "test":
+                frm, to = request.form.get("from", ""), request.form.get("to", "").strip()
+                if frm.split("@")[0] not in boxes or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", to):
+                    raise ValueError("Pilih pengirim dan isi alamat tujuan yang valid")
+                ok, err = mailsrv.send_test(frm, to)
+                flash(f"Email tes dikirim ke {to}; lihat log di bawah untuk status pengiriman" if ok else f"Gagal: {err}",
+                      "ok" if ok else "error")
+            elif act == "flush":
+                mailsrv.flush()
+                flash("Antrean dicoba kirim ulang", "ok")
+            elif act == "remove":
+                mail_remove(domain, request.form.get("wipe") == "1")
+                flash(f"Email {domain} dinonaktifkan", "ok")
+                return redirect(url_for("mail_page"))
+            save_config()
+            mailsrv.render(m)
+            if rules and (r := mail_rules(domain)) and not r["ok"]:
+                flash(f"Disimpan di server, tapi aturan Cloudflare gagal: {r['err']}", "error")
+        except (ValueError, cfapi.CFError) as e:
+            flash(str(e), "error")
+        return redirect(url_for("mail_domain", domain=domain))
+    box_rows = [{"local": l, **b, "used": mailsrv.usage(domain, l)} for l, b in sorted(boxes.items())]
+    return render_template("mail_domain.html", domain=domain, dm=dm, boxes=box_rows, fwds=sorted(fwds.items()),
+                           quotas=QUOTAS, webmail=webmail_sites(), log=mailsrv.log(domain), m=m)
+
+
+@app.post("/mail/inbound")
+def mail_inbound():
+    """Dipanggil Cloudflare Email Worker untuk setiap email masuk."""
+    m = cfg.get("mail") or {}
+    h = request.headers
+    body = request.get_data()
+    sender, rcpt = h.get("X-LP-From", ""), h.get("X-LP-To", "").lower()
+    if not m.get("secret") or not mailsrv.verify(m["secret"], h.get("X-LP-Timestamp"), sender, rcpt, body,
+                                                 h.get("X-LP-Signature")):
+        abort(403)
+    if not mailsrv.accepts(m, rcpt):
+        return f"<{rcpt}> tidak ditemukan", 404
+    ok, err = mailsrv.deliver(body, sender, rcpt)
+    return ("OK", 200) if ok else (err or "gagal", 500)
+
+
 # ---------- backup & restore ----------
 _bk_running = set()
 RESTORE_LOG = BASE / "deploy-logs" / "restore.log"
@@ -1386,6 +1641,22 @@ def restore_job(path, target, overwrite, publish, cleanup):
             node_apply(new, n)
             say(f"Node.js: npm install & start di port {n['port']} (lihat menu Node.js)")
             nodeapp.task(WWW, new, n, ["install", "build"])
+        if m.get("mail"):
+            mail_ready()
+            # alamat @domain-lama di forwarder ikut diganti; hash password tetap
+            mail_cfg()["domains"][new] = json.loads(json.dumps(m["mail"]).replace("@" + old, "@" + new))
+            save_config()
+            if (work / "mail.tar.gz").exists():
+                (work / "mail").mkdir()
+                run(["tar", "xzf", str(work / "mail.tar.gz"), "-C", str(work / "mail")])
+                shutil.rmtree(mailsrv.maildir(new), ignore_errors=True)
+                shutil.move(str(work / "mail" / old), str(mailsrv.maildir(new)))
+                run(["chown", "-R", "vmail:vmail", str(mailsrv.maildir(new))])
+            mailsrv.render(mail_cfg())
+            say(f"email: {len(m['mail'].get('mailboxes', {}))} kotak surat dipulihkan")
+            if cf_enabled() and in_cf_zone(new):
+                for cat, msg in mail_cloud(new):
+                    say(("" if cat == "ok" else "⚠ ") + msg)
 
         # penyesuaian per aplikasi
         app_id = (m.get("app") or {}).get("app")

@@ -2,7 +2,7 @@
 <div class="card"><h2>Pasang Aplikasi</h2>
 <form method="post" autocomplete="off"><input type="hidden" name="csrf" value="{{ csrf }}">
 <div class="apps">{% for id, r in catalog.items() %}
-<label class="app"><input type="radio" name="app" value="{{ id }}" data-admin="{{ 1 if r.admin else 0 }}" data-sample="{{ 1 if r.sample else 0 }}" data-minpw="{{ r.min_pw or 10 }}" required {{ 'checked' if loop.first }}>
+<label class="app"><input type="radio" name="app" value="{{ id }}" data-admin="{{ 1 if r.admin else 0 }}" data-sample="{{ 1 if r.sample else 0 }}" data-minpw="{{ r.min_pw or 10 }}" required {{ 'checked' if request.args.get('app') == id or (request.args.get('app') not in catalog and loop.first) }}>
 <b>{{ r.icon }} {{ r.name }}</b><span class="muted">{{ r.desc }}</span></label>{% endfor %}</div>
 <table class="form" style="margin-top:14px">
 <tr><td class="muted" style="width:170px">Domain</td><td>{{ domain_picker(zones, "free-sites", "contoh: jurnal.test") }}

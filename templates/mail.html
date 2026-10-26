@@ -1,0 +1,47 @@
+{% extends "base.html" %}{% block title %}Email{% endblock %}{% block content %}
+{% if not installed %}<div class="flash error">Paket postfix/dovecot belum terpasang. Jalankan ulang <code>install.sh</code>.</div>{% endif %}
+{% if not cf_on %}<div class="flash error">Email masuk diterima lewat Cloudflare. Hubungkan <a href="/cloudflare">Cloudflare</a> dulu.</div>{% endif %}
+
+<div class="card"><h2>Domain Email</h2>
+<div class="table-wrap"><table><tr><th>Domain</th><th>Kotak surat</th><th>Forwarder</th><th>Email masuk</th><th>Email keluar</th><th></th></tr>
+{% for x in rows %}<tr><td><b>{{ x.domain }}</b></td><td>{{ x.boxes }}</td><td>{{ x.fwds }}</td>
+<td>{% if x.cf and x.cf.ok %}<span class="badge on">Cloudflare ✓</span>{% elif x.cf %}<span class="badge off" title="{{ x.cf.err }}">bermasalah</span>{% else %}<span class="muted">-</span>{% endif %}</td>
+<td>{% if x.brevo and x.brevo.ok %}<span class="badge on">Brevo ✓</span>{% elif x.brevo %}<span class="badge off" title="{{ x.brevo.err or 'belum terverifikasi' }}">belum</span>{% else %}<span class="muted">-</span>{% endif %}</td>
+<td><a class="btn btn-sm btn-gray" href="/mail/{{ x.domain }}">Kelola</a></td></tr>
+{% else %}<tr><td colspan="6" class="muted">Belum ada domain email.</td></tr>{% endfor %}</table></div>
+{% if choices %}<form method="post" class="row" style="margin-top:12px"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="add">
+<select name="domain">{% for d in choices %}<option>{{ d }}</option>{% endfor %}</select>
+<button>+ Aktifkan Email</button></form>
+<p class="muted">Panel mengaktifkan Cloudflare Email Routing (MX), SPF, DMARC, dan (bila API key Brevo diisi) DKIM Brevo secara otomatis. Domain yang sudah memakai mail server lain (punya MX) tidak akan ditimpa.</p>{% endif %}
+</div>
+
+<div class="card"><h2>Webmail</h2>
+{% if webmail %}{% for w in webmail %}<p>✉️ <a href="https://{{ w }}" target="_blank">https://{{ w }}</a> <span class="muted">— login dengan alamat email lengkap + password kotak surat</span></p>{% endfor %}
+{% else %}<p class="muted">Belum ada webmail. <a class="btn btn-sm btn-green" href="/apps?app=roundcube">Pasang Webmail (Roundcube)</a> di subdomain seperti <code>webmail.domainanda</code>.</p>{% endif %}
+<p class="muted">Kirim email dari aplikasi di server ini: SMTP <code>127.0.0.1:587</code>, tanpa TLS, login alamat email + password kotak surat.</p></div>
+
+<div class="card" id="setup"><h2>Pengaturan</h2>
+<h3 style="font-size:14px;margin:0 0 6px">1. Email masuk: Cloudflare Email Worker</h3>
+<p class="muted">Cloudflare menerima email untuk domain Anda lalu Worker <code>localpanel-mail</code> meneruskannya ke panel lewat tunnel (tidak perlu membuka port). Token Cloudflare perlu izin tambahan:
+<b>Account → Workers Scripts: Edit</b>, <b>Zone → Email Routing Rules: Edit</b>, <b>Zone → Zone Settings: Edit</b> (selain izin yang sudah ada).</p>
+<form method="post" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="worker">
+<button class="btn-sm {{ 'btn-gray' if m.worker else 'btn-green' }}" {{ 'disabled' if not cf_on }}>{{ 'Perbarui Worker' if m.worker else 'Pasang Worker' }}</button>
+<span class="muted">{% if m.worker %}Terpasang {{ m.worker }} → <code>{{ m.endpoint }}</code>{% else %}belum terpasang{% endif %}</span></form>
+<p class="muted">Bila panel dilindungi Cloudflare Access, buat aturan <b>Bypass</b> untuk path <code>/mail/inbound</code>.</p>
+
+<h3 style="font-size:14px;margin:14px 0 6px">2. Email keluar: relay Brevo</h3>
+<form method="post" autocomplete="off"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="relay">
+<table class="form">
+<tr><td class="muted" style="width:170px">SMTP login</td><td><input name="user" value="{{ (m.relay or {}).user or '' }}" placeholder="xxxx@smtp-brevo.com" style="min-width:280px"></td></tr>
+<tr><td class="muted">SMTP key</td><td><input name="password" type="password" placeholder="{{ '•••••• (tersimpan, kosongkan bila tidak diganti)' if (m.relay or {}).password else 'xsmtpsib-…' }}" style="min-width:280px"></td></tr>
+<tr><td class="muted">API key</td><td><input name="api_key" type="password" value="{{ m.brevo_key or '' }}" placeholder="xkeysib-… (opsional)" style="min-width:280px">
+<div class="muted">Untuk autentikasi domain otomatis (DKIM, SPF, kode verifikasi Brevo ditulis ke DNS Cloudflare).</div></td></tr>
+</table>
+<p><button class="btn-sm">Simpan</button> <span class="muted">Brevo → <b>SMTP &amp; API</b>: tab SMTP (login &amp; key) dan tab API Keys. Gratis 300 email/hari.</span></p></form>
+</div>
+
+<div class="card"><h2>Layanan</h2>
+<p>{% for k, v in svc.items() %}<span class="badge {{ v }}">{{ k }}: {{ v }}</span> {% endfor %}</p>
+{% if queue and 'is empty' not in queue %}<details><summary>Antrean email keluar</summary><pre>{{ queue }}</pre></details>{% else %}<p class="muted">Antrean email keluar kosong.</p>{% endif %}
+</div>
+{% endblock %}

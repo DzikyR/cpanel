@@ -4,6 +4,7 @@
 Isi satu berkas backup (<domain>-<waktu>.tar.gz):
   manifest.json   pengaturan website (git, aplikasi, Node.js, database, nginx, queue/cron)
   db/<nama>.sql   dump tiap database MariaDB website (db/pg-<nama>.sql untuk PostgreSQL)
+  mail.tar.gz     kotak surat email domain ini (/var/vmail/<domain>), bila email aktif
   <domain>/...    seluruh folder /var/www/<domain> (tanpa node_modules & cache npm)
 
 Dipakai juga dari cron:  python3 backup.py auto   (backup terjadwal + hapus backup lama)
@@ -17,6 +18,7 @@ BASE = Path(__file__).resolve().parent
 CONFIG = BASE / "config.json"
 BACKUPS = Path("/var/backups/localpanel")
 WWW = Path("/var/www")
+VMAIL = Path("/var/vmail")
 NGINX_AVAIL = Path("/etc/nginx/sites-available")
 SITE_PREFIX = "lp-"
 FORMAT = 1
@@ -99,6 +101,13 @@ def create(cfg, domain, log=None):
         for d in pg_dbs:
             say(f"dump database PostgreSQL {d['name']}")
             pgsql.dump(d["name"], work / "db" / f"pg-{d['name']}.sql")
+        mail = ((cfg.get("mail") or {}).get("domains") or {}).get(domain)
+        if mail and (VMAIL / domain).is_dir():
+            say("arsipkan kotak surat email")
+            p = subprocess.run(["tar", "czf", str(work / "mail.tar.gz"), "-C", str(VMAIL), domain],
+                               stderr=subprocess.PIPE, text=True)
+            if p.returncode not in (0, 1):
+                raise RuntimeError(f"tar email gagal: {p.stderr.strip()}")
         nginx = conf.read_text()
         root = re.search(r"(?m)^\s*root (.+);$", nginx).group(1)
         cron_app = Path("/etc/cron.d") / f"localpanel-app-{slug(domain)}"
@@ -107,6 +116,7 @@ def create(cfg, domain, log=None):
             "nginx_root": root, "nginx_conf": nginx, "dbs": dbs, "pg_dbs": pg_dbs,
             "git": cfg.get("git", {}).get(domain), "app": cfg.get("apps", {}).get(domain),
             "node": cfg.get("node", {}).get(domain),
+            "mail": {k: v for k, v in mail.items() if k not in ("cf", "brevo")} if mail else None,
             "queue": subprocess.run(["systemctl", "is-enabled", f"localpanel-queue@{domain}.service"],
                                     capture_output=True, text=True).stdout.strip() == "enabled",
             "schedule": (Path("/etc/cron.d") / ("localpanel-" + domain.replace(".", "_"))).exists(),
@@ -115,7 +125,8 @@ def create(cfg, domain, log=None):
         (work / "manifest.json").write_text(json.dumps(manifest, indent=2))
         out = out_dir / f"{domain}-{stamp}.tar.gz"
         say(f"arsipkan file website ke {out.name}")
-        p = subprocess.run(["tar", "czf", str(out), "-C", str(work), "manifest.json", "db",
+        extra = ["mail.tar.gz"] if (work / "mail.tar.gz").exists() else []
+        p = subprocess.run(["tar", "czf", str(out), "-C", str(work), "manifest.json", "db", *extra,
                             "-C", str(WWW), "--exclude=node_modules", "--exclude=.npm", domain], stderr=subprocess.PIPE, text=True)
         if p.returncode not in (0, 1):  # 1 = ada file berubah saat diarsipkan (mis. log), tetap valid
             out.unlink(missing_ok=True)

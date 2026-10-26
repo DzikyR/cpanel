@@ -9,6 +9,7 @@ Panel hosting sederhana ala cPanel untuk server Ubuntu/Debian: **Nginx + PHP-FPM
 - **Node.js**: aplikasi Node.js per domain (mirip *Setup Node.js App* cPanel): pilih versi Node (sistem atau 18/20/22/24 resmi), service systemd + reverse proxy nginx (WebSocket), environment, database MySQL otomatis, npm install/build/skrip, log, auto-deploy dari Git.
 - **Backup & Restore**: satu berkas `.tar.gz` per website (file + database + pengaturan panel), jadwal harian/mingguan, restore ke server lain atau domain lain (konfigurasi & URL disesuaikan otomatis).
 - **Database**: MariaDB/MySQL dan PostgreSQL (buat/hapus database & user; aplikasi Node.js bisa langsung dibuatkan database PostgreSQL dengan `DATABASE_URL` otomatis; ikut backup & restore).
+- **Email**: mail server per domain (Postfix + Dovecot): kotak surat dengan kuota, forwarder & catch-all, webmail Roundcube (menu Aplikasi). Email masuk lewat Cloudflare Email Routing + Email Worker (tanpa membuka port), email keluar lewat relay Brevo; MX/SPF/DMARC/DKIM ditulis otomatis ke DNS Cloudflare. Aplikasi di server bisa kirim email lewat `127.0.0.1:587`. Ikut backup & restore.
 - File Manager, Services, Logs.
 
 ## Instalasi di server baru
@@ -24,7 +25,7 @@ Token tunnel: Cloudflare **Zero Trust → Networks → Tunnels → Create tunnel
 
 Di akhir instalasi ditampilkan alamat panel (port **2083**) dan password admin acak. Setelah login:
 1. **Ganti Password**.
-2. Menu **Cloudflare** → masukkan API token (izin: *Zone:Read, DNS:Edit, Cloudflare Tunnel:Edit*) agar domain muncul otomatis.
+2. Menu **Cloudflare** → masukkan API token (izin: *Zone:Read, DNS:Edit, Cloudflare Tunnel:Edit*; untuk menu Email tambah *Workers Scripts:Edit, Email Routing Rules:Edit, Zone Settings:Edit*) agar domain muncul otomatis.
 
 Opsi lain: `--port 8443`, `--no-node`. Installer aman dijalankan ulang.
 
@@ -47,6 +48,8 @@ cd /opt/localpanel && git pull && systemctl restart localpanel
 | `nodeapp.py` | aplikasi Node.js (versi Node, service, proxy) |
 | `cloudflare.py` | API Cloudflare (tunnel & DNS) |
 | `pgsql.py` | database PostgreSQL (buat, hapus, dump, import) |
+| `mailsrv.py` | mail server (Postfix + Dovecot, kotak surat, forwarder) |
+| `brevo.py` | relay email keluar Brevo (autentikasi domain) |
 | `deploy/` | konfigurasi server yang dipasang `install.sh` |
 
 `config.json` (password admin, token Cloudflare, kredensial database) dan `keys/` dibuat per server dan **tidak** disimpan di repo.

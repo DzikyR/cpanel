@@ -1,0 +1,50 @@
+{% extends "base.html" %}{% block title %}Email · {{ domain }}{% endblock %}{% block content %}
+<p><a href="/mail">← Email</a></p>
+<div class="card"><h2>Status</h2>
+<table class="form">
+<tr><td class="muted" style="width:170px">Email masuk</td><td>{% if dm.cf and dm.cf.ok %}<span class="badge on">Cloudflare Email Routing ✓</span>{% elif dm.cf %}<span class="badge off">bermasalah</span> <span class="muted">{{ dm.cf.err }}</span>{% else %}<span class="muted">belum disinkronkan</span>{% endif %}
+{% if not m.worker %}<div class="muted">⚠ Worker belum dipasang (menu Email → Pengaturan), email masuk belum bisa diterima.</div>{% endif %}</td></tr>
+<tr><td class="muted">Email keluar</td><td>{% if dm.brevo and dm.brevo.ok %}<span class="badge on">Brevo: domain terautentikasi ✓</span>{% elif dm.brevo %}<span class="badge off">Brevo belum siap</span> <span class="muted">{{ dm.brevo.err or 'menunggu verifikasi DNS' }}</span>{% elif not (m.relay or {}).user %}<span class="badge off">relay belum diatur</span> <span class="muted">isi SMTP Brevo di menu Email</span>{% else %}<span class="muted">relay Brevo aktif; isi API key agar domain diautentikasi otomatis</span>{% endif %}</td></tr>
+{% for w in webmail %}<tr><td class="muted">Webmail</td><td><a href="https://{{ w }}" target="_blank">https://{{ w }}</a></td></tr>{% endfor %}
+</table>
+<form method="post" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><button name="action" value="sync" class="btn-sm btn-gray">🔄 Sinkronkan DNS &amp; Cloudflare/Brevo</button></form></div>
+
+<div class="card"><h2>Kotak Surat</h2>
+<div class="table-wrap"><table><tr><th>Alamat</th><th>Pemakaian</th><th>Kuota</th><th>Aksi</th></tr>
+{% for b in boxes %}<tr><td><b>{{ b.local }}@{{ domain }}</b><div class="muted">dibuat {{ b.created }}</div></td>
+<td>{{ b.used|size }}</td>
+<td><form method="post" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="quota"><input type="hidden" name="local" value="{{ b.local }}">
+<select name="quota" onchange="this.form.submit()">{% for q in quotas %}<option {{ 'selected' if q == b.quota }}>{{ q }}</option>{% endfor %}</select></form></td>
+<td class="row"><form method="post" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="passwd"><input type="hidden" name="local" value="{{ b.local }}">
+<input name="password" type="password" placeholder="password baru" minlength="8" required style="width:150px"><button class="btn-sm btn-gray">Ganti</button></form>
+<form method="post" class="inline" onsubmit="return confirm('Hapus {{ b.local }}@{{ domain }} beserta SEMUA isinya?')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="del_box"><input type="hidden" name="local" value="{{ b.local }}"><button class="btn-sm btn-red">Hapus</button></form></td></tr>
+{% else %}<tr><td colspan="4" class="muted">Belum ada kotak surat.</td></tr>{% endfor %}</table></div>
+<form method="post" class="row" style="margin-top:12px" autocomplete="off"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="add_box">
+<input name="local" placeholder="nama" required pattern="[a-zA-Z0-9._+-]+" style="width:150px"><span class="muted">@{{ domain }}</span>
+<input name="password" type="text" placeholder="password (min. 8)" minlength="8" required style="width:170px">
+<select name="quota">{% for q in quotas %}<option {{ 'selected' if q == '1G' }}>{{ q }}</option>{% endfor %}</select>
+<button>+ Buat Kotak Surat</button></form></div>
+
+<div class="card"><h2>Forwarder</h2>
+<div class="table-wrap"><table><tr><th>Alamat</th><th>Diteruskan ke</th><th></th></tr>
+{% for local, dests in fwds %}<tr><td><b>{{ 'semua alamat lain (catch-all)' if local == '*' else local ~ '@' ~ domain }}</b></td><td>{{ dests|join(', ') }}</td>
+<td><form method="post" class="inline"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="del_fwd"><input type="hidden" name="local" value="{{ local }}"><button class="btn-sm btn-red">Hapus</button></form></td></tr>
+{% else %}<tr><td colspan="3" class="muted">Belum ada forwarder.</td></tr>{% endfor %}</table></div>
+<form method="post" class="row" style="margin-top:12px"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="add_fwd">
+<input name="local" placeholder="nama atau *" required style="width:130px"><span class="muted">@{{ domain }} →</span>
+<input name="dests" placeholder="tujuan@gmail.com, admin@{{ domain }}" required style="min-width:280px"><button>+ Tambah</button></form>
+<p class="muted">Forwarder ke alamat luar dikirim lewat relay Brevo. <code>*</code> = catch-all (hanya domain utama). Forwarder bernama sama dengan kotak surat tetap menyimpan salinan di kotak surat.</p></div>
+
+{% if boxes %}<div class="card"><h2>Kirim Email Tes</h2>
+<form method="post" class="row"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="test">
+<select name="from">{% for b in boxes %}<option>{{ b.local }}@{{ domain }}</option>{% endfor %}</select> →
+<input name="to" type="email" placeholder="alamat tujuan" required style="min-width:240px"><button class="btn-sm">Kirim</button>
+<button name="action" value="flush" class="btn-sm btn-gray" formnovalidate>Kirim ulang antrean</button></form></div>{% endif %}
+
+<div class="card"><h2>Log email <span class="muted">({{ domain }})</span></h2><pre>{{ log or 'Belum ada.' }}</pre></div>
+
+<div class="card"><h2>Nonaktifkan Email</h2>
+<form method="post" onsubmit="return confirm('Nonaktifkan email {{ domain }}?')"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="remove">
+<label><input type="checkbox" name="wipe" value="1"> Hapus juga semua isi kotak surat</label> <button class="btn-sm btn-red">Nonaktifkan</button></form>
+<p class="muted">Aturan Email Routing di Cloudflare dihapus. Record MX/SPF tidak dihapus otomatis.</p></div>
+{% endblock %}

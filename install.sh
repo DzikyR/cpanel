@@ -31,12 +31,15 @@ say() { printf '\n\033[1;33m== %s\033[0m\n' "$*"; }
 [ "$(id -u)" = 0 ] || { echo "Jalankan sebagai root (sudo bash install.sh)"; exit 1; }
 command -v apt-get >/dev/null || { echo "Installer ini untuk Ubuntu/Debian (apt)."; exit 1; }
 export DEBIAN_FRONTEND=noninteractive
+# Postfix dikonfigurasi oleh panel (menu Email), bukan oleh wizard paket
+echo "postfix postfix/main_mailer_type select No configuration" | debconf-set-selections
 
 say "Paket dasar: nginx, MariaDB, PostgreSQL, PHP-FPM, Python, Composer"
 apt-get update -q
 apt-get install -y -q nginx mariadb-server php-fpm php-cli php-mysql php-curl php-gd php-intl php-mbstring \
   php-xml php-zip php-bcmath php-sqlite3 python3 python3-flask python3-psutil python3-pymysql \
-  composer git curl unzip zip sudo cron ca-certificates gnupg postgresql php-pgsql
+  composer git curl unzip zip sudo cron ca-certificates gnupg postgresql php-pgsql \
+  postfix dovecot-imapd dovecot-lmtpd openssl
 PHP_VER="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
 echo "PHP $PHP_VER"
 
