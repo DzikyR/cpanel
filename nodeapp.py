@@ -370,6 +370,7 @@ def task(www, domain, n, steps, restart=True, on_done=None):
         env = {"PATH": f"{runtime_bin(n['version'])}:/usr/local/bin:/usr/bin:/bin", "HOME": str(site),
                "npm_config_cache": str(site / ".npm"), "NPM_CONFIG_UPDATE_NOTIFIER": "false",
                "NPM_CONFIG_FUND": "false", "NPM_CONFIG_AUDIT": "false",
+               "NODE_ENV": "production", "HOST": "127.0.0.1", "PORT": str(n["port"]),  # sama dengan service
                **db_env(n), **n.get("env", {})}
         with open(log_path(domain), "w") as log:
             log.write(f"{domain} — {time.strftime('%Y-%m-%d %H:%M:%S')} — Node {node_version(n['version'])}\n")
