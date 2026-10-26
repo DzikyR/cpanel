@@ -31,11 +31,17 @@
 <p><button>Simpan &amp; Restart</button></p></form></div>
 
 <div class="card"><h2>Database</h2>
-{% if n.db %}<table class="form">
-<tr><td class="muted" style="width:170px">Database</td><td><code>{{ n.db.name }}</code> · user <code>{{ n.db.user }}</code> · <details style="display:inline"><summary>password</summary><code>{{ n.db.password }}</code></details></td></tr>
-<tr><td class="muted">Environment</td><td><code>DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD DATABASE_URL</code></td></tr></table>
-{% else %}<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="db">
-<button class="btn-sm btn-gray">Buat database MySQL</button> <span class="muted">Kredensial otomatis dimasukkan ke environment aplikasi.</span></form>{% endif %}
+<table class="form">
+{% if n.pg %}<tr><td class="muted" style="width:170px">🐘 PostgreSQL</td><td><code>{{ n.pg.name }}</code> · user <code>{{ n.pg.user }}</code> · <details style="display:inline"><summary>password &amp; URL</summary><code>{{ n.pg.password }}</code><br><code style="word-break:break-all">{{ pg_url }}</code></details>
+<div class="muted">Environment: <code>DATABASE_URL PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD</code></div></td></tr>{% endif %}
+{% if n.db %}<tr><td class="muted" style="width:170px">MySQL / MariaDB</td><td><code>{{ n.db.name }}</code> · user <code>{{ n.db.user }}</code> · <details style="display:inline"><summary>password</summary><code>{{ n.db.password }}</code></details>
+<div class="muted">Environment: <code>DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD</code>{% if not n.pg %} <code>DATABASE_URL</code>{% endif %}</div></td></tr>{% endif %}
+</table>
+{% if (pg_on and not n.pg) or not n.db %}<form method="post" class="row"><input type="hidden" name="csrf" value="{{ csrf }}">
+{% if pg_on and not n.pg %}<button name="action" value="pg" class="btn-sm btn-gray">Buat database PostgreSQL</button>{% endif %}
+{% if not n.db %}<button name="action" value="db" class="btn-sm btn-gray">Buat database MySQL</button>{% endif %}
+<span class="muted">Kredensial otomatis dimasukkan ke environment aplikasi lalu aplikasi di-restart.</span></form>{% endif %}
+{% if n.pg and n.db %}<p class="muted"><code>DATABASE_URL</code> menunjuk ke PostgreSQL.</p>{% endif %}
 </div>
 
 <div class="card"><h2>Log npm</h2>{% if running %}<p>⏳ Sedang berjalan…</p>{% endif %}<pre id="log">{{ log or 'Belum ada.' }}</pre></div>

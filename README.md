@@ -1,6 +1,6 @@
 # LocalPanel
 
-Panel hosting sederhana ala cPanel untuk server Ubuntu/Debian: **Nginx + PHP-FPM + MariaDB**, dikelola lewat web (Flask), dengan integrasi **Cloudflare Tunnel**.
+Panel hosting sederhana ala cPanel untuk server Ubuntu/Debian: **Nginx + PHP-FPM + MariaDB + PostgreSQL + Node.js**, dikelola lewat web (Flask), dengan integrasi **Cloudflare Tunnel**.
 
 ## Fitur
 - **Website**: buat/hapus vhost, domain dipilih dari domain aktif di Cloudflare (subdomain + domain), publikasi otomatis lewat Cloudflare Tunnel (cek bentrok DNS sebelum dibuat).
@@ -8,7 +8,8 @@ Panel hosting sederhana ala cPanel untuk server Ubuntu/Debian: **Nginx + PHP-FPM
 - **Aplikasi (installer sekali klik)**: WordPress, OJS, Moodle, Joomla, Drupal, SLiMS, Laravel, phpMyAdmin — versi resmi terbaru, database & akun admin dibuat otomatis.
 - **Node.js**: aplikasi Node.js per domain (mirip *Setup Node.js App* cPanel): pilih versi Node (sistem atau 18/20/22/24 resmi), service systemd + reverse proxy nginx (WebSocket), environment, database MySQL otomatis, npm install/build/skrip, log, auto-deploy dari Git.
 - **Backup & Restore**: satu berkas `.tar.gz` per website (file + database + pengaturan panel), jadwal harian/mingguan, restore ke server lain atau domain lain (konfigurasi & URL disesuaikan otomatis).
-- Database (MariaDB), File Manager, Services, Logs.
+- **Database**: MariaDB/MySQL dan PostgreSQL (buat/hapus database & user; aplikasi Node.js bisa langsung dibuatkan database PostgreSQL dengan `DATABASE_URL` otomatis; ikut backup & restore).
+- File Manager, Services, Logs.
 
 ## Instalasi di server baru
 Ubuntu 24.04/26.04 atau Debian 12+, sebagai root:
@@ -45,6 +46,7 @@ cd /opt/localpanel && git pull && systemctl restart localpanel
 | `gitdeploy.py` | deploy dari Git |
 | `nodeapp.py` | aplikasi Node.js (versi Node, service, proxy) |
 | `cloudflare.py` | API Cloudflare (tunnel & DNS) |
+| `pgsql.py` | database PostgreSQL (buat, hapus, dump, import) |
 | `deploy/` | konfigurasi server yang dipasang `install.sh` |
 
 `config.json` (password admin, token Cloudflare, kredensial database) dan `keys/` dibuat per server dan **tidak** disimpan di repo.

@@ -14,7 +14,8 @@
 <tr><td class="muted">Environment</td><td><textarea name="env" rows="3" style="width:100%;max-width:520px;font-family:ui-monospace,monospace" placeholder="KEY=VALUE per baris (opsional)"></textarea></td></tr>
 <tr><td></td><td>
 <label><input type="checkbox" name="starter" value="1" checked> Buat contoh aplikasi bila folder kosong</label><br>
-<label><input type="checkbox" name="make_db" value="1"> Buat database MySQL (kredensial masuk ke environment)</label><br>
+Database: <select name="make_db"><option value="">tidak perlu</option>{% if pg_on %}<option value="pgsql">PostgreSQL</option>{% endif %}<option value="mysql">MySQL / MariaDB</option>{% if pg_on %}<option value="both">PostgreSQL + MySQL</option>{% endif %}</select>
+<span class="muted">kredensial otomatis masuk ke environment</span><br>
 <label><input type="checkbox" name="auto_install" value="1" checked> Setelah Git deploy: npm install + build + restart otomatis</label>
 {% if cf_on %}<br><label><input type="checkbox" name="publish" value="1" {{ 'checked' if cf_auto }}> Publikasikan via Cloudflare (domain baru)</label>{% endif %}
 </td></tr></table>

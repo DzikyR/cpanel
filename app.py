@@ -14,6 +14,7 @@ import backup as bk
 import cloudflare as cfapi
 import gitdeploy
 import nodeapp
+import pgsql
 
 BASE = Path(__file__).resolve().parent
 CONFIG = BASE / "config.json"
@@ -23,7 +24,7 @@ NGINX_ENABLED = Path("/etc/nginx/sites-enabled")
 SITE_PREFIX = "lp-"  # nama file vhost yang dikelola panel
 # versi PHP-FPM terpasang (mis. 8.5 di Ubuntu 26.04, 8.3 di Ubuntu 24.04)
 PHP_VER = (sorted(Path(p).parent.name for p in glob.glob("/etc/php/*/fpm")) or ["8.3"])[-1]
-SERVICES = ["nginx", "mariadb", f"php{PHP_VER}-fpm", "ssh", "cron"]
+SERVICES = ["nginx", "mariadb", f"php{PHP_VER}-fpm", "ssh", "cron"] + (["postgresql"] if pgsql.available() else [])
 DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 DBNAME_RE = re.compile(r"^[a-zA-Z0-9_]{1,64}$")
 
@@ -418,6 +419,7 @@ def site_delete(domain):
 def remove_site_data(domain, drop_db):
     """Matikan queue/cron, hapus pengaturan panel, dan (opsional) database milik website."""
     dbs = bk.site_dbs(cfg, domain)
+    pg_dbs = bk.site_pg_dbs(cfg, domain)
     laravel_set(domain, "queue", False)
     laravel_set(domain, "schedule", False)
     app_cron_file(domain).unlink(missing_ok=True)
@@ -435,6 +437,12 @@ def remove_site_data(domain, drop_db):
             if d.get("user") and d["user"] != "root":
                 conn.cursor().execute("DROP USER IF EXISTS %s@'localhost'", (d["user"],))
         conn.close()
+        for d in pg_dbs:
+            try:
+                pgsql.drop_db(d["name"])
+                pgsql.drop_user(d["user"])
+            except pgsql.PGError:
+                pass
 
 
 # ---------- git deploy ----------
@@ -498,6 +506,19 @@ def site_db(domain, section="git"):
                                 "password": secrets.token_urlsafe(18)}
         ensure_db(creds)
         g["db"] = creds
+        save_config()
+        return creds
+    return make
+
+
+def site_pg(domain, section):
+    """Seperti site_db, tetapi database PostgreSQL (disimpan di bagian "pg")."""
+    def make():
+        g = cfg[section][domain]
+        creds = g.get("pg") or {"name": bk.slug(domain)[:63], "user": bk.slug(domain)[:63],
+                                "password": secrets.token_urlsafe(18)}
+        pgsql.ensure_db(creds)
+        g["pg"] = creds
         save_config()
         return creds
     return make
@@ -670,6 +691,15 @@ def databases():
         name, user, pw = (request.form.get(k, "").strip() for k in ("name", "user", "password"))
         if not DBNAME_RE.match(name) or (user and not DBNAME_RE.match(user)):
             flash("Nama database/user hanya boleh huruf, angka, underscore", "error")
+        elif request.form.get("engine") == "pgsql":
+            try:
+                if user:
+                    pw = pw or secrets.token_urlsafe(12)
+                    pgsql.ensure_user(user, pw)
+                pgsql.create_db(name, user or None)
+                flash(f"Database PostgreSQL {name} dibuat" + (f". User: {user} / Password: {pw}" if user else ""), "ok")
+            except pgsql.PGError as e:
+                flash(f"Gagal: {e}", "error")
         else:
             try:
                 cur.execute(f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
@@ -690,7 +720,39 @@ def databases():
     cur.execute("SELECT User, Host FROM mysql.user WHERE User NOT IN ('root','mysql','mariadb.sys','') ORDER BY User")
     users = cur.fetchall()
     conn.close()
-    return render_template("databases.html", dbs=dbs, users=users)
+    pg = None
+    if pgsql.available():
+        try:
+            pg = {"dbs": pgsql.list_dbs(), "users": pgsql.list_users()}
+        except pgsql.PGError as e:
+            flash(f"PostgreSQL: {e}", "error")
+    return render_template("databases.html", dbs=dbs, users=users, pg=pg)
+
+
+@app.post("/pg/<name>/delete")
+@login_required
+def pg_delete(name):
+    if not DBNAME_RE.match(name) or name in pgsql.SYSTEM_DBS:
+        abort(400)
+    try:
+        pgsql.drop_db(name)
+        flash(f"Database PostgreSQL {name} dihapus", "ok")
+    except pgsql.PGError as e:
+        flash(f"Gagal: {e}", "error")
+    return redirect(url_for("databases") + "#pg")
+
+
+@app.post("/pgusers/<user>/delete")
+@login_required
+def pguser_delete(user):
+    if not DBNAME_RE.match(user) or user == "postgres":
+        abort(400)
+    try:
+        pgsql.drop_user(user)
+        flash(f"User PostgreSQL {user} dihapus", "ok")
+    except pgsql.PGError as e:
+        flash(f"Gagal: {e}", "error")
+    return redirect(url_for("databases") + "#pg")
 
 
 @app.post("/databases/<name>/delete")
@@ -1011,8 +1073,13 @@ def node_page():
         n["port"] = nodeapp.free_port({x["port"] for x in nodes.values()})
         nodes[domain] = n
         save_config()
-        if request.form.get("make_db") == "1":
-            site_db(domain, "node")()
+        try:
+            if request.form.get("make_db") in ("mysql", "both"):
+                site_db(domain, "node")()
+            if request.form.get("make_db") in ("pgsql", "both"):
+                site_pg(domain, "node")()
+        except (pymysql.MySQLError, pgsql.PGError) as e:
+            flash(f"Database gagal dibuat: {e}", "error")
         try:
             node_apply(domain, n)
         except RuntimeError as e:
@@ -1026,7 +1093,7 @@ def node_page():
     rows = [{"domain": d, **n, "st": nodeapp.status(d), "running": nodeapp.is_running(d)} for d, n in sorted(nodes.items())]
     runtimes = nodeapp.runtimes()
     free = [x["domain"] for x in list_sites() if x["domain"] not in nodes and x["domain"] not in cfg.get("apps", {})]
-    return render_template("node.html", rows=rows, runtimes=runtimes, majors=nodeapp.MAJORS,
+    return render_template("node.html", pg_on=pgsql.available(), rows=rows, runtimes=runtimes, majors=nodeapp.MAJORS,
                            installed={k for k, _ in runtimes}, used={n["version"] for n in nodes.values()},
                            busy=nodeapp.runtime_busy(), rlog=nodeapp.runtime_log(), free=free, zones=cf_zones(),
                            cf_on=cf_enabled(), cf_auto=cfg.get("cf_auto", True))
@@ -1089,8 +1156,12 @@ def node_detail(domain):
                 flash("Dijalankan…", "ok")
             else:
                 flash("Proses lain masih berjalan", "error")
-        elif act == "db" and not n.get("db"):
-            site_db(domain, "node")()
+        elif act in ("db", "pg") and not n.get(act):
+            try:
+                (site_db if act == "db" else site_pg)(domain, "node")()
+            except (pymysql.MySQLError, pgsql.PGError) as e:
+                flash(f"Database gagal dibuat: {e}", "error")
+                return redirect(url_for("node_detail", domain=domain))
             nodeapp.write_service(WWW, domain, n)
             if nodeapp.status(domain)["enabled"]:
                 nodeapp.control(domain, "restart")
@@ -1113,7 +1184,8 @@ def node_detail(domain):
                            runtimes=nodeapp.runtimes(), scripts=nodeapp.scripts(app_dir),
                            has_pkg=(app_dir / "package.json").exists(), running=nodeapp.is_running(domain),
                            log=nodeapp.read_log(domain), journal=nodeapp.journal(domain),
-                           env_text=nodeapp.env_text(n.get("env", {})), db_env=nodeapp.db_env(n.get("db")),
+                           env_text=nodeapp.env_text(n.get("env", {})), db_env=nodeapp.db_env(n),
+                           pg_on=pgsql.available(), pg_url=pgsql.url(n["pg"]) if n.get("pg") else None,
                            url=site_url(domain), git=cfg.get("git", {}).get(domain),
                            rel_dir=str(app_dir.relative_to(site)) if site in app_dir.parents else n["dir"])
 
@@ -1251,6 +1323,20 @@ def restore_job(path, target, overwrite, publish, cleanup):
             say(f"database {nd['name']} (user {nd['user']})")
             ensure_db(nd)
             gitdeploy.import_sql(nd["name"], work / "db" / f"{d['name']}.sql")
+        pgmap = {}
+        for i, d in enumerate(m.get("pg_dbs", [])):
+            nd = dict(d)
+            if new != old:
+                base = bk.slug(new)
+                nd["name"] = (d["name"].replace(bk.slug(old), base, 1) if d["name"].startswith(bk.slug(old))
+                              else f"{base}_pg{i + 1}")[:63]
+                nd["user"] = (d["user"].replace(bk.slug(old), base, 1) if d["user"].startswith(bk.slug(old))
+                              else f"{base}_pg{i + 1}")[:63]
+                repl += [(d["name"], nd["name"]), (d["user"], nd["user"])]
+            pgmap[d["name"]] = nd
+            say(f"database PostgreSQL {nd['name']} (user {nd['user']})")
+            pgsql.ensure_db(nd)
+            pgsql.import_sql(nd, work / "db" / f"pg-{d['name']}.sql")
         if new != old:
             repl.append((old, new))
             for f in bk.rewrite_configs(WWW / new, repl):
@@ -1287,6 +1373,8 @@ def restore_job(path, target, overwrite, publish, cleanup):
             n = fix(m["node"])
             if n.get("db"):
                 n["db"] = dbmap.get(n["db"]["name"], n["db"])
+            if n.get("pg"):
+                n["pg"] = pgmap.get(n["pg"]["name"], n["pg"])
             if not nodeapp.node_version(n["version"]):
                 say(f"Node.js versi {n['version']} belum terpasang di server ini, memakai versi sistem")
                 n["version"] = "system"

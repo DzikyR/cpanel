@@ -1,8 +1,10 @@
 {% extends "base.html" %}{% block title %}Database{% endblock %}{% block content %}
-<div class="card"><h2>Buat Database MariaDB</h2>
+<div class="card"><h2>Buat Database</h2>
 <form method="post" class="row"><input type="hidden" name="csrf" value="{{ csrf }}">
+<select name="engine"><option value="mysql">MariaDB / MySQL</option>{% if pg %}<option value="pgsql">PostgreSQL</option>{% endif %}</select>
 <input name="name" placeholder="nama_database" required><input name="user" placeholder="user (opsional)"><input name="password" placeholder="password (kosong = acak)"><button>+ Buat</button></form>
-<p class="muted">Host: <code>localhost</code> · Port: <code>3306</code></p></div>
+<p class="muted">MariaDB: <code>localhost:3306</code>{% if pg %} · PostgreSQL: <code>127.0.0.1:5432</code>, contoh URL <code>postgresql://user:password@127.0.0.1:5432/nama_database</code>{% endif %}</p></div>
+<h2 style="margin-top:8px">MariaDB / MySQL</h2>
 <div class="card"><h2>Database</h2><div class="table-wrap"><table><tr><th>Nama</th><th>Tabel</th><th>Ukuran</th><th></th></tr>
 {% for d in dbs %}<tr><td>{{ d.name }}</td><td>{{ d.tables }}</td><td>{{ d.size|size }}</td>
 <td><form method="post" action="/databases/{{ d.name }}/delete" onsubmit="return confirm('Hapus database {{ d.name }}? Data akan hilang permanen!')"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-sm btn-red">Hapus</button></form></td></tr>
@@ -11,4 +13,15 @@
 {% for u in users %}<tr><td>{{ u[0] }}</td><td>{{ u[1] }}</td>
 <td>{% if u[1]=='localhost' %}<form method="post" action="/dbusers/{{ u[0] }}/delete" onsubmit="return confirm('Hapus user {{ u[0] }}?')"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-sm btn-red">Hapus</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="3" class="muted">Belum ada user.</td></tr>{% endfor %}</table></div></div>
+
+{% if pg %}<h2 style="margin-top:8px" id="pg">🐘 PostgreSQL</h2>
+<div class="card"><h2>Database</h2><div class="table-wrap"><table><tr><th>Nama</th><th>Pemilik</th><th>Ukuran</th><th></th></tr>
+{% for d in pg.dbs %}<tr><td>{{ d.name }}</td><td>{{ d.owner }}</td><td>{{ d.size|size }}</td>
+<td><form method="post" action="/pg/{{ d.name }}/delete" onsubmit="return confirm('Hapus database PostgreSQL {{ d.name }}? Data akan hilang permanen!')"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-sm btn-red">Hapus</button></form></td></tr>
+{% else %}<tr><td colspan="4" class="muted">Belum ada database.</td></tr>{% endfor %}</table></div></div>
+<div class="card"><h2>User</h2><div class="table-wrap"><table><tr><th>User</th><th></th></tr>
+{% for u in pg.users %}<tr><td>{{ u }}</td>
+<td><form method="post" action="/pgusers/{{ u }}/delete" onsubmit="return confirm('Hapus user PostgreSQL {{ u }}?')"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn-sm btn-red">Hapus</button></form></td></tr>
+{% else %}<tr><td colspan="2" class="muted">Belum ada user.</td></tr>{% endfor %}</table></div>
+<p class="muted">User yang masih memiliki database tidak bisa dihapus; hapus database-nya dulu.</p></div>{% endif %}
 {% endblock %}

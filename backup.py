@@ -3,13 +3,15 @@
 
 Isi satu berkas backup (<domain>-<waktu>.tar.gz):
   manifest.json   pengaturan website (git, aplikasi, Node.js, database, nginx, queue/cron)
-  db/<nama>.sql   dump tiap database website
+  db/<nama>.sql   dump tiap database MariaDB website (db/pg-<nama>.sql untuk PostgreSQL)
   <domain>/...    seluruh folder /var/www/<domain> (tanpa node_modules & cache npm)
 
 Dipakai juga dari cron:  python3 backup.py auto   (backup terjadwal + hapus backup lama)
 """
 import json, re, shutil, subprocess, sys, tarfile, time
 from pathlib import Path
+
+import pgsql
 
 BASE = Path(__file__).resolve().parent
 CONFIG = BASE / "config.json"
@@ -42,6 +44,16 @@ def site_dbs(cfg, domain):
                     and v["DB_DATABASE"] not in out and v.get("DB_USERNAME") != "root":
                 out[v["DB_DATABASE"]] = {"name": v["DB_DATABASE"], "user": v.get("DB_USERNAME", ""),
                                          "password": v.get("DB_PASSWORD", "")}
+    return list(out.values())
+
+
+def site_pg_dbs(cfg, domain):
+    """Database PostgreSQL milik website (dari pengaturan Git, aplikasi, Node.js)."""
+    out = {}
+    for section in ("git", "apps", "node"):
+        d = (cfg.get(section, {}).get(domain) or {}).get("pg")
+        if d:
+            out[d["name"]] = d
     return list(out.values())
 
 
@@ -83,12 +95,16 @@ def create(cfg, domain, log=None):
                                    stderr=subprocess.PIPE, text=True)
             if p.returncode != 0:
                 raise RuntimeError(f"mysqldump {d['name']} gagal: {p.stderr.strip()}")
+        pg_dbs = site_pg_dbs(cfg, domain)
+        for d in pg_dbs:
+            say(f"dump database PostgreSQL {d['name']}")
+            pgsql.dump(d["name"], work / "db" / f"pg-{d['name']}.sql")
         nginx = conf.read_text()
         root = re.search(r"(?m)^\s*root (.+);$", nginx).group(1)
         cron_app = Path("/etc/cron.d") / f"localpanel-app-{slug(domain)}"
         manifest = {
             "format": FORMAT, "domain": domain, "created": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "nginx_root": root, "nginx_conf": nginx, "dbs": dbs,
+            "nginx_root": root, "nginx_conf": nginx, "dbs": dbs, "pg_dbs": pg_dbs,
             "git": cfg.get("git", {}).get(domain), "app": cfg.get("apps", {}).get(domain),
             "node": cfg.get("node", {}).get(domain),
             "queue": subprocess.run(["systemctl", "is-enabled", f"localpanel-queue@{domain}.service"],

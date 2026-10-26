@@ -32,11 +32,11 @@ say() { printf '\n\033[1;33m== %s\033[0m\n' "$*"; }
 command -v apt-get >/dev/null || { echo "Installer ini untuk Ubuntu/Debian (apt)."; exit 1; }
 export DEBIAN_FRONTEND=noninteractive
 
-say "Paket dasar: nginx, MariaDB, PHP-FPM, Python, Composer"
+say "Paket dasar: nginx, MariaDB, PostgreSQL, PHP-FPM, Python, Composer"
 apt-get update -q
 apt-get install -y -q nginx mariadb-server php-fpm php-cli php-mysql php-curl php-gd php-intl php-mbstring \
   php-xml php-zip php-bcmath php-sqlite3 python3 python3-flask python3-psutil python3-pymysql \
-  composer git curl unzip zip sudo cron ca-certificates gnupg
+  composer git curl unzip zip sudo cron ca-certificates gnupg postgresql php-pgsql
 PHP_VER="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
 echo "PHP $PHP_VER"
 
@@ -98,7 +98,7 @@ PY
 fi
 
 systemctl daemon-reload
-systemctl enable --now mariadb nginx "php$PHP_VER-fpm" cron
+systemctl enable --now mariadb postgresql nginx "php$PHP_VER-fpm" cron
 systemctl reload nginx "php$PHP_VER-fpm"
 systemctl enable localpanel
 systemctl restart localpanel

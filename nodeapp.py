@@ -5,7 +5,7 @@ Setiap website Node.js:
   - mendengarkan 127.0.0.1:<port>; nginx meneruskan domain ke port itu (WebSocket didukung)
   - memakai versi Node pilihan: "system" (/usr/bin/node) atau versi resmi di node/<major>/
 Pengaturan disimpan di config.json bagian "node":
-  {domain: {"dir", "start", "port", "version", "env": {KEY: VALUE}, "db", "auto_install"}}
+  {domain: {"dir", "start", "port", "version", "env": {KEY: VALUE}, "db", "pg", "auto_install"}}
 """
 import json, os, re, shutil, subprocess, threading, time, urllib.request
 from pathlib import Path
@@ -234,19 +234,26 @@ def env_text(env):
     return "\n".join(f"{k}={v}" for k, v in env.items())
 
 
-def db_env(db):
-    if not db:
-        return {}
-    return {"DB_HOST": "127.0.0.1", "DB_PORT": "3306", "DB_NAME": db["name"], "DB_USER": db["user"],
-            "DB_PASSWORD": db["password"],
-            "DATABASE_URL": f"mysql://{db['user']}:{db['password']}@127.0.0.1:3306/{db['name']}"}
+def db_env(n):
+    """Variabel koneksi database aplikasi. Bila ada PostgreSQL, DATABASE_URL menunjuk ke PostgreSQL."""
+    out = {}
+    db, pg = n.get("db"), n.get("pg")
+    if db:
+        out.update(DB_HOST="127.0.0.1", DB_PORT="3306", DB_NAME=db["name"], DB_USER=db["user"],
+                   DB_PASSWORD=db["password"],
+                   DATABASE_URL=f"mysql://{db['user']}:{db['password']}@127.0.0.1:3306/{db['name']}")
+    if pg:
+        out.update(PGHOST="127.0.0.1", PGPORT="5432", PGDATABASE=pg["name"], PGUSER=pg["user"],
+                   PGPASSWORD=pg["password"],
+                   DATABASE_URL=f"postgresql://{pg['user']}:{pg['password']}@127.0.0.1:5432/{pg['name']}")
+    return out
 
 
 def write_service(www, domain, n):
     """Tulis skrip start, berkas env, dan unit systemd sesuai pengaturan n."""
     ETC.mkdir(parents=True, exist_ok=True)
     ETC.chmod(0o755)
-    env = {**db_env(n.get("db")), **n.get("env", {})}
+    env = {**db_env(n), **n.get("env", {})}
     ef = env_file(domain)
     # systemd membaca berkas ini sebagai root sebelum turun ke www-data
     ef.write_text("# Dikelola oleh LocalPanel\n" + "".join(
@@ -363,7 +370,7 @@ def task(www, domain, n, steps, restart=True, on_done=None):
         env = {"PATH": f"{runtime_bin(n['version'])}:/usr/local/bin:/usr/bin:/bin", "HOME": str(site),
                "npm_config_cache": str(site / ".npm"), "NPM_CONFIG_UPDATE_NOTIFIER": "false",
                "NPM_CONFIG_FUND": "false", "NPM_CONFIG_AUDIT": "false",
-               **db_env(n.get("db")), **n.get("env", {})}
+               **db_env(n), **n.get("env", {})}
         with open(log_path(domain), "w") as log:
             log.write(f"{domain} — {time.strftime('%Y-%m-%d %H:%M:%S')} — Node {node_version(n['version'])}\n")
 
