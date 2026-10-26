@@ -1,0 +1,196 @@
+{% extends "base.html" %}{% block title %}Panduan{% endblock %}{% block content %}
+<style>
+.toc{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.toc a{display:block;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text)}
+.toc a:hover{border-color:var(--brand);text-decoration:none}
+.toc b{display:block}.toc span{font-size:12px;color:var(--muted)}
+.guide h2{font-size:18px;margin:0 0 4px}.guide h3{font-size:14px;margin:16px 0 6px}
+.guide p,.guide li{max-width:78ch}.guide ol,.guide ul{padding-left:20px;margin:6px 0}.guide li{margin:3px 0}
+.guide code{background:#eef2f7;padding:1px 5px;border-radius:4px;font-size:13px}
+.tip{background:#fff7f2;border-left:3px solid var(--brand);padding:8px 12px;border-radius:4px;margin:10px 0}
+.warn{background:#fef2f2;border-left:3px solid var(--err);padding:8px 12px;border-radius:4px;margin:10px 0}
+.top{float:right;font-size:12px}
+</style>
+
+<div class="card"><h2>Mulai dari mana?</h2>
+<p class="muted">Pilih topik. Alur paling umum: <b>buat website → unggah file → (opsional) database → publikasikan</b>.</p>
+<div class="toc">
+<a href="#website"><b>🌐 Membuat website</b><span>domain, subdomain, online via Cloudflare</span></a>
+<a href="#upload"><b>📁 Mengunggah file project</b><span>File Manager, ZIP, edit file</span></a>
+<a href="#git"><b>⎇ Deploy dari GitHub</b><span>auto-deploy setiap push</span></a>
+<a href="#apps"><b>🧩 Aplikasi sekali klik</b><span>WordPress, OJS, Moodle, Laravel…</span></a>
+<a href="#node"><b>🟢 Aplikasi Node.js</b><span>Express, Next.js, Nuxt, API</span></a>
+<a href="#db"><b>🗄️ Database</b><span>MySQL/MariaDB & PostgreSQL</span></a>
+<a href="#mail"><b>✉️ Email</b><span>kotak surat, forwarder, webmail</span></a>
+<a href="#backup"><b>💾 Backup & restore</b><span>cadangan, pindah server</span></a>
+<a href="#cf"><b>☁️ Cloudflare</b><span>token & publikasi</span></a>
+<a href="#maint"><b>⚙️ Services, Logs, Password</b><span>pemeliharaan</span></a>
+<a href="#faq"><b>❓ Masalah umum</b><span>502, 403, upload gagal…</span></a>
+</div></div>
+
+<div class="guide">
+<div class="card" id="website"><a class="top" href="#">↑ atas</a><h2>🌐 Membuat website</h2>
+<ol>
+<li>Buka menu <a href="/sites">Website</a>.</li>
+<li>Di <b>Tambah Website</b>, isi <b>subdomain</b> (mis. <code>prodi</code>) lalu pilih domain dari daftar, misalnya <code>informatikatsu.my.id</code> → hasilnya <code>prodi.informatikatsu.my.id</code>. Kosongkan subdomain untuk memakai domain utama.</li>
+<li>Biarkan <b>Publikasikan via Cloudflare</b> tercentang agar website langsung online dengan HTTPS.</li>
+<li>Klik <b>+ Buat Website</b>. Panel membuat folder <code>/var/www/&lt;domain&gt;/public_html</code> berisi halaman contoh.</li>
+</ol>
+<p>Di <b>Daftar Website</b> tersedia tombol <b>Nonaktifkan/Aktifkan</b>, <b>Hubungkan Git</b>, <b>Publikasikan/Cabut Publik</b>, dan <b>Hapus</b>.</p>
+<div class="tip">Website baru biasanya bisa dibuka 1–2 menit setelah dibuat (menunggu DNS Cloudflare).</div>
+<div class="warn">Saat menghapus, panel menanyakan dua kali. Pertanyaan kedua menentukan apakah <b>file dan database</b> ikut dihapus. Pilih "Cancel" pada pertanyaan kedua bila hanya ingin menghapus konfigurasinya.</div>
+</div>
+
+<div class="card" id="upload"><a class="top" href="#">↑ atas</a><h2>📁 Mengunggah file project</h2>
+<p>Semua file website ada di menu <a href="/files">File Manager</a>, mulai dari folder <code>/var/www</code>. Klik nama domain → <code>public_html</code>. Isi folder <code>public_html</code> inilah yang tampil di browser.</p>
+<h3>Cara tercepat: unggah ZIP lalu ekstrak</h3>
+<ol>
+<li>Di komputer Anda, kompres isi project menjadi <code>.zip</code>. Kompres <b>isinya</b> (index.php/index.html dan folder lain), bukan folder induknya, agar file tidak masuk ke subfolder.</li>
+<li>Di File Manager, masuk ke <code>&lt;domain&gt;/public_html</code>.</li>
+<li>Hapus halaman contoh <code>index.php</code> buatan panel (tombol <b>Hapus</b>).</li>
+<li>Klik <b>Choose File</b>, pilih file ZIP, lalu <b>⬆ Upload</b>. Maksimal 512 MB per unggahan; bisa memilih beberapa file sekaligus.</li>
+<li>Pada baris file ZIP, klik <b>Ekstrak</b>. File yang sudah ada dengan nama sama akan ditimpa.</li>
+<li>Hapus file ZIP-nya setelah selesai, lalu buka website untuk mengecek.</li>
+</ol>
+<div class="tip">Kalau setelah ekstrak file berada di <code>public_html/nama-project/</code>, berarti ZIP berisi folder induk. Website akan terbuka di <code>/nama-project/</code>. Hapus folder itu, kompres ulang <b>isi</b> project, lalu unggah dan ekstrak lagi.</div>
+<h3>Lainnya di File Manager</h3>
+<ul>
+<li><b>+ Folder</b> dan <b>+ File</b>: buat folder/file baru di folder yang sedang dibuka.</li>
+<li><b>Edit</b>: ubah file teks (PHP, HTML, CSS, JS, .env…) langsung di browser, lalu <b>Simpan</b>. File di atas 2 MB atau file biner tidak bisa diedit.</li>
+<li><b>Unduh</b>: simpan file ke komputer Anda.</li>
+<li><b>Rename</b>: ganti nama file/folder (di folder yang sama; tidak untuk memindahkan). <b>Hapus</b>: folder dihapus beserta isinya.</li>
+</ul>
+<h3>Konfigurasi koneksi database</h3>
+<p>Buat database di menu <a href="#db">Database</a>, lalu isikan ke file konfigurasi project (mis. <code>.env</code>, <code>config.php</code>):</p>
+<ul><li>MySQL/MariaDB: host <code>localhost</code> (atau <code>127.0.0.1</code>), port <code>3306</code></li>
+<li>PostgreSQL: host <code>127.0.0.1</code>, port <code>5432</code></li></ul>
+<p>Untuk mengimpor file <code>.sql</code> besar, cara termudah adalah memasang <b>phpMyAdmin</b> dari menu <a href="#apps">Aplikasi</a>.</p>
+</div>
+
+<div class="card" id="git"><a class="top" href="#">↑ atas</a><h2>⎇ Deploy dari GitHub</h2>
+<p>Lebih praktis daripada unggah manual bila kode project ada di GitHub: setiap <code>git push</code> website ikut terbarui.</p>
+<ol>
+<li>Menu <a href="/sites">Website</a> → <b>Hubungkan Git</b> pada website tujuan.</li>
+<li>Isi <b>URL Repo</b> dan <b>Branch</b> (mis. <code>main</code>). Repo publik: URL <code>https://github.com/user/repo.git</code>. Repo privat: URL SSH <code>git@github.com:user/repo.git</code>, lalu tempel <b>Deploy Key</b> yang ditampilkan ke GitHub (repo → Settings → Deploy keys).</li>
+<li><b>Folder publik</b>: kosong bila <code>index.php/index.html</code> ada di root repo; <code>public</code> untuk Laravel; <code>dist</code>/<code>build</code> untuk hasil build.</li>
+<li><b>Perintah setelah deploy</b> (opsional), mis. <code>composer install --no-dev</code>. Untuk Laravel klik <b>Isi preset Laravel</b>.</li>
+<li>Klik <b>Hubungkan &amp; Deploy</b> dan lihat log-nya.</li>
+</ol>
+<p><b>Auto deploy:</b> salin <b>Payload URL</b> dan <b>Secret</b> dari bagian <i>Auto Deploy</i> ke GitHub (repo → Settings → Webhooks → Add webhook, content type <code>application/json</code>).</p>
+<div class="tip">Bila repo punya <code>.env.example</code>, panel otomatis membuat database MySQL + file <code>.env</code> dan mengimpor <code>database/*.sql</code> saat deploy pertama.</div>
+<div class="warn">Deploy menimpa folder repo dengan isi GitHub. Jangan mengedit file kode langsung di server untuk website yang terhubung Git; ubah di GitHub lalu push.</div>
+</div>
+
+<div class="card" id="apps"><a class="top" href="#">↑ atas</a><h2>🧩 Aplikasi sekali klik</h2>
+<ol>
+<li>Menu <a href="/apps">Aplikasi</a> → pilih aplikasi: WordPress, OJS, Moodle, Laravel, Joomla, Drupal, SLiMS, phpMyAdmin, atau Webmail.</li>
+<li>Pilih domain (website baru dibuat otomatis), isi judul situs, username, email, dan password admin.</li>
+<li>Klik <b>🚀 Pasang</b>. Halaman detail menampilkan log; tunggu sampai status <b>terpasang</b>.</li>
+<li>Halaman detail berisi alamat website, halaman admin, login admin, dan data database.</li>
+</ol>
+<div class="tip">Aplikasi hanya bisa dipasang di website yang masih kosong (belum dipakai Git, aplikasi lain, atau Node.js).</div>
+</div>
+
+<div class="card" id="node"><a class="top" href="#">↑ atas</a><h2>🟢 Aplikasi Node.js</h2>
+<ol>
+<li>Menu <a href="/node">Node.js</a> → <b>Buat Aplikasi Node.js</b>: pilih domain, versi Node, dan folder aplikasi (bawaan <code>nodeapp</code>).</li>
+<li>Pilih <b>Database</b> bila perlu (PostgreSQL dan/atau MySQL); kredensialnya otomatis masuk ke environment.</li>
+<li>Klik <b>🟢 Buat Aplikasi</b>. Bila folder kosong, panel membuat contoh <code>server.js</code>.</li>
+<li>Unggah kode Anda ke <code>/var/www/&lt;domain&gt;/nodeapp</code> lewat File Manager (ZIP → Ekstrak) <b>tanpa</b> folder <code>node_modules</code>, atau isi folder <code>repo</code> lewat Git Deploy.</li>
+<li>Di halaman aplikasi, klik <b>npm install</b> (atau <b>npm install + build</b>). Aplikasi otomatis di-restart.</li>
+</ol>
+<div class="warn">Aplikasi <b>wajib</b> mendengarkan port dari <code>process.env.PORT</code>, contoh: <code>app.listen(process.env.PORT)</code>. Port ditentukan panel.</div>
+<ul>
+<li><b>Perintah start</b>: <code>npm start</code>, <code>node app.js</code>, <code>npx next start</code> (Next.js), <code>node .output/server/index.mjs</code> (Nuxt).</li>
+<li><b>Environment</b>: isi <code>KEY=VALUE</code> per baris (pengganti file <code>.env</code>), lalu <b>Simpan &amp; Restart</b>.</li>
+<li>Database PostgreSQL tersedia sebagai <code>DATABASE_URL</code> (siap untuk Prisma, Drizzle, Sequelize, <code>pg</code>).</li>
+<li>Skrip lain di <code>package.json</code> (mis. migrasi <code>prisma migrate deploy</code>) dijalankan lewat <b>npm run</b>.</li>
+<li><b>Log aplikasi</b> menampilkan output <code>console.log</code> dan error; cek di sini bila website menampilkan "Aplikasi Node.js sedang tidak berjalan".</li>
+<li>Versi Node lain (18/20/22/24) dipasang dari bagian <b>Versi Node.js</b>.</li>
+</ul>
+</div>
+
+<div class="card" id="db"><a class="top" href="#">↑ atas</a><h2>🗄️ Database</h2>
+<ol>
+<li>Menu <a href="/databases">Database</a> → <b>Buat Database</b>.</li>
+<li>Pilih jenis: <b>MariaDB / MySQL</b> atau <b>PostgreSQL</b>.</li>
+<li>Isi nama database (huruf, angka, underscore), nama user, dan password (kosongkan agar dibuat acak).</li>
+<li>Klik <b>+ Buat</b>. <b>Catat password</b> yang muncul; password tidak ditampilkan lagi.</li>
+</ol>
+<table>
+<tr><th></th><th>MySQL / MariaDB</th><th>PostgreSQL</th></tr>
+<tr><td>Host</td><td><code>localhost</code></td><td><code>127.0.0.1</code></td></tr>
+<tr><td>Port</td><td><code>3306</code></td><td><code>5432</code></td></tr>
+<tr><td>Contoh URL</td><td><code>mysql://user:pass@127.0.0.1:3306/nama</code></td><td><code>postgresql://user:pass@127.0.0.1:5432/nama</code></td></tr>
+</table>
+<div class="tip">Database hanya bisa diakses dari aplikasi di server ini, tidak dari internet. User PostgreSQL yang masih memiliki database harus dihapus database-nya terlebih dahulu.</div>
+</div>
+
+<div class="card" id="mail"><a class="top" href="#">↑ atas</a><h2>✉️ Email</h2>
+<h3>Persiapan (sekali saja, oleh admin)</h3>
+<ol>
+<li>Token Cloudflare perlu izin tambahan: <b>Workers Scripts: Edit</b>, <b>Email Routing Rules: Edit</b>, <b>Zone Settings: Edit</b>.</li>
+<li>Menu <a href="/mail">Email</a> → Pengaturan → isi SMTP login, SMTP key, dan API key Brevo → <b>Simpan</b>.</li>
+<li>Klik <b>Pasang Worker</b> (buka panel lewat alamat https).</li>
+<li>Pasang <b>Webmail</b> dari menu Aplikasi, mis. di <code>webmail.informatikatsu.my.id</code>.</li>
+</ol>
+<h3>Membuat alamat email</h3>
+<ol>
+<li>Menu <a href="/mail">Email</a> → pilih domain → <b>+ Aktifkan Email</b>.</li>
+<li>Di <b>Kotak Surat</b>, isi nama (mis. <code>prodi</code>), password minimal 8 karakter, dan kuota → <b>+ Buat Kotak Surat</b>.</li>
+<li>Buka webmail, login dengan alamat lengkap (<code>prodi@domain</code>) dan password tersebut.</li>
+</ol>
+<ul>
+<li><b>Forwarder</b>: teruskan alamat ke alamat lain, mis. <code>info@</code> → beberapa dosen atau ke Gmail.</li>
+<li><b>Kirim Email Tes</b> untuk memastikan pengiriman bekerja; status pengiriman terlihat di log.</li>
+<li>Aplikasi di server dapat mengirim email lewat SMTP <code>127.0.0.1</code> port <code>587</code> tanpa TLS, login alamat email + password kotak surat.</li>
+</ul>
+<div class="warn">Dari luar jaringan, email dibuka lewat <b>webmail</b>. Aplikasi email di HP/Outlook (IMAP/SMTP) belum bisa tersambung karena server tidak membuka port ke internet.</div>
+</div>
+
+<div class="card" id="backup"><a class="top" href="#">↑ atas</a><h2>💾 Backup &amp; restore</h2>
+<ul>
+<li>Menu <a href="/backups">Backup</a> → <b>Backup sekarang</b> per website, atau <b>💾 Backup semua website</b>. Satu berkas <code>.tar.gz</code> berisi file website, database (MySQL &amp; PostgreSQL), kotak surat email, dan pengaturannya.</li>
+<li>Atur jadwal <b>harian/mingguan</b> dan jumlah cadangan yang disimpan.</li>
+<li>Unduh berkas backup dan simpan di tempat lain (Google Drive, laptop) sebagai cadangan di luar server.</li>
+<li><b>Restore</b>: pilih backup dari daftar atau unggah berkas, isi domain tujuan bila ingin dipulihkan ke domain lain. Centang <b>Timpa</b> bila website tujuan sudah ada.</li>
+</ul>
+<div class="tip">Lakukan backup sebelum perubahan besar (update aplikasi, import database, deploy versi baru).</div>
+</div>
+
+<div class="card" id="cf"><a class="top" href="#">↑ atas</a><h2>☁️ Cloudflare</h2>
+<p>Website dipublikasikan lewat <b>Cloudflare Tunnel</b>, sehingga server tidak perlu IP publik atau membuka port. HTTPS ditangani Cloudflare.</p>
+<ul>
+<li>Menu <a href="/cloudflare">Cloudflare</a> menyimpan <b>API token</b> dan menampilkan rute tunnel yang aktif.</li>
+<li>Izin token minimal: <i>Zone: Read</i>, <i>DNS: Edit</i>, <i>Cloudflare Tunnel: Edit</i>. Untuk email tambahkan izin di bagian <a href="#mail">Email</a>.</li>
+<li>Website yang belum online: menu Website → <b>Publikasikan</b>.</li>
+</ul>
+</div>
+
+<div class="card" id="maint"><a class="top" href="#">↑ atas</a><h2>⚙️ Services, Logs, Password</h2>
+<ul>
+<li><a href="/">Dashboard</a>: pemakaian CPU, RAM, disk, dan status layanan.</li>
+<li><a href="/services">Services</a>: start/restart/stop nginx, PHP, MariaDB, PostgreSQL, Postfix, Dovecot. Restart layanan bila website error setelah perubahan konfigurasi.</li>
+<li><a href="/logs">Logs</a>: log akses &amp; error nginx per website dan log PHP. Tempat pertama untuk mencari penyebab error 500.</li>
+<li><a href="/password">Ganti Password</a>: ganti password login panel secara berkala.</li>
+</ul>
+</div>
+
+<div class="card" id="faq"><a class="top" href="#">↑ atas</a><h2>❓ Masalah umum</h2>
+<h3>Website menampilkan halaman "Website aktif. Dibuat oleh LocalPanel"</h3>
+<p>File project belum ada di <code>public_html</code> atau halaman contoh <code>index.php</code> belum dihapus.</p>
+<h3>403 Forbidden</h3>
+<p>Tidak ada <code>index.php</code>/<code>index.html</code> di folder publik. Biasanya file terekstrak ke subfolder; lihat bagian <a href="#upload">mengunggah file</a>.</p>
+<h3>500 Internal Server Error</h3>
+<p>Ada error di kode atau konfigurasi (mis. koneksi database salah). Cek menu <a href="/logs">Logs</a> → <code>&lt;domain&gt;.error.log</code>.</p>
+<h3>Website tidak bisa dibuka dari internet</h3>
+<p>Pastikan kolom <b>Publik</b> di menu Website berstatus <b>🌍 Online</b>; bila tidak, klik <b>Publikasikan</b>. Tunggu 1–2 menit.</p>
+<h3>"Aplikasi Node.js sedang tidak berjalan" (502)</h3>
+<p>Buka menu Node.js → aplikasi → <b>Log aplikasi</b>. Penyebab umum: belum <b>npm install</b>, perintah start salah, atau aplikasi tidak memakai <code>process.env.PORT</code>.</p>
+<h3>Upload gagal</h3>
+<p>Batas unggahan 512 MB. Untuk berkas lebih besar, pecah ZIP-nya atau gunakan Git Deploy.</p>
+<h3>Email tidak masuk/terkirim</h3>
+<p>Buka menu Email → domain → cek <b>Status</b> (Cloudflare &amp; Brevo harus ✓), klik <b>Sinkronkan</b>, lalu lihat <b>Log email</b>.</p>
+</div>
+</div>
+{% endblock %}

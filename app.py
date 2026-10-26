@@ -1445,6 +1445,13 @@ def mail_inbound():
     return ("OK", 200) if ok else (err or "gagal", 500)
 
 
+# ---------- panduan ----------
+@app.route("/panduan")
+@login_required
+def guide():
+    return render_template("guide.html")
+
+
 # ---------- backup & restore ----------
 _bk_running = set()
 RESTORE_LOG = BASE / "deploy-logs" / "restore.log"
