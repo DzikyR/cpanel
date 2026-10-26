@@ -30,6 +30,18 @@ def remove_key(domain):
         p.unlink(missing_ok=True)
 
 
+def ssh_url(repo):
+    """https://github.com/user/repo(.git) -> git@github.com:user/repo.git (untuk repo privat + deploy key)."""
+    m = re.match(r"^https://github\.com/([\w.-]+/[\w.-]+?)(\.git)?/?$", repo)
+    return f"git@github.com:{m.group(1)}.git" if m else None
+
+
+def github_keys_url(repo):
+    """Halaman 'Add deploy key' di GitHub untuk repo ini, atau None."""
+    m = re.match(r"^(?:https://github\.com/|git@github\.com:)([\w.-]+/[\w.-]+?)(\.git)?/?$", repo or "")
+    return f"https://github.com/{m.group(1)}/settings/keys/new" if m else None
+
+
 def repo_dir(www, domain):
     return www / domain / "repo"
 
@@ -184,15 +196,32 @@ def deploy(www, domain, gcfg, on_done=None, make_db=None):
             src = src_dir(www, domain)
             gd = src if (src / ".git").exists() else rd  # folder clone Git
             git = ["git", "-c", "safe.directory=*"]
+            # repo privat dengan URL https GitHub: coba ulang lewat SSH memakai deploy key
+            urls = [gcfg["repo"]] + ([ssh_url(gcfg["repo"])] if ssh_url(gcfg["repo"]) else [])
             try:
                 if not (gd / ".git").exists():
                     if rd.exists() and any(rd.iterdir()):
                         raise RuntimeError(f"Folder {rd} tidak kosong")
-                    step("git clone", git + ["clone", "--branch", gcfg["branch"], "--depth", "1",
-                                             gcfg["repo"], str(rd)])
+                    for i, url in enumerate(urls):
+                        try:
+                            step("git clone" + (f" (SSH + deploy key: {url})" if i else ""),
+                                 git + ["clone", "--branch", gcfg["branch"], "--depth", "1", url, str(rd)])
+                            break
+                        except RuntimeError:
+                            shutil.rmtree(rd, ignore_errors=True)
+                            if i == len(urls) - 1:
+                                raise RuntimeError("Gagal clone. Repo privat? Pastikan Deploy Key sudah ditambahkan "
+                                                   "di GitHub (Settings → Deploy keys)")
                 else:
-                    step("git remote set-url", git + ["remote", "set-url", "origin", gcfg["repo"]], cwd=gd)
-                    step("git fetch", git + ["fetch", "--depth", "1", "origin", gcfg["branch"]], cwd=gd)
+                    for i, url in enumerate(urls):
+                        try:
+                            step("git remote set-url", git + ["remote", "set-url", "origin", url], cwd=gd)
+                            step("git fetch" + (" (SSH + deploy key)" if i else ""),
+                                 git + ["fetch", "--depth", "1", "origin", gcfg["branch"]], cwd=gd)
+                            break
+                        except RuntimeError:
+                            if i == len(urls) - 1:
+                                raise
                     step("git reset --hard", git + ["reset", "--hard", "FETCH_HEAD"], cwd=gd)
                 step("commit", git + ["log", "-1", "--format=%h %s (%an, %ar)"], cwd=gd)
                 if gd == rd and find_app_zip(rd):

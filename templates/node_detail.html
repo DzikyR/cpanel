@@ -40,7 +40,7 @@
 <p class="muted">Kode ditarik ke <code>/var/www/{{ domain }}/repo</code> dan folder aplikasi otomatis dipindah ke sana.</p>
 {% endif %}
 <h3 style="font-size:14px;margin:14px 0 6px">Deploy Key (repo privat)</h3>
-<p class="muted">GitHub → repo → <b>Settings → Deploy keys → Add deploy key</b>, tempel key ini (read-only cukup). Pakai URL SSH <code>git@github.com:user/repo.git</code>.</p>
+<p class="muted">GitHub → repo → <b>Settings → Deploy keys → Add deploy key</b>, tempel key ini (read-only cukup){% if keys_url %} · <a href="{{ keys_url }}" target="_blank">buka halaman Add deploy key ↗</a>{% endif %}. URL <code>https://github.com/…</code> repo privat otomatis memakai key ini.</p>
 <pre style="white-space:pre-wrap;word-break:break-all" id="pubkey">{{ pubkey }}</pre>
 <button type="button" class="btn-sm btn-gray" onclick="var t=document.getElementById('pubkey').textContent;(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){this.textContent='Tersalin ✓'}.bind(this),function(){var r=document.createRange();r.selectNodeContents(document.getElementById('pubkey'));var s=getSelection();s.removeAllRanges();s.addRange(r);document.execCommand('copy');}.bind(this))">📋 Salin key</button>
 </div>

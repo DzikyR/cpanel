@@ -12,7 +12,14 @@
 <label style="margin-left:12px"><input type="radio" name="src" value="upload" checked onchange="srcSync()"> 📁 Unggah manual (File Manager)</label>
 <div id="src-git" style="margin-top:8px" hidden>
 <input name="repo" placeholder="https://github.com/user/repo.git" style="min-width:340px"> <input name="branch" value="main" style="width:110px">
-<div class="muted">Repo publik: URL <code>https://</code>. Repo privat: URL SSH <code>git@github.com:user/repo.git</code>, lalu tambahkan <b>Deploy Key</b> yang muncul di halaman aplikasi ke GitHub dan klik Deploy. Kode ditarik ke <code>/var/www/&lt;domain&gt;/repo</code>.</div></div>
+<div class="muted">Tempel URL repo (publik atau privat). Kode ditarik ke <code>/var/www/&lt;domain&gt;/repo</code>.</div>
+<div id="dk" style="margin-top:10px;border:1px solid var(--line);border-radius:6px;padding:10px;max-width:640px">
+<b>🔑 Deploy Key</b> <span class="muted" id="dk-for">isi subdomain/domain di atas untuk membuat key</span>
+<pre id="dk-key" style="white-space:pre-wrap;word-break:break-all;margin:8px 0" hidden></pre>
+<div class="row" id="dk-act" hidden><button type="button" class="btn-sm btn-gray" id="dk-copy">📋 Salin key</button>
+<a class="btn btn-sm btn-green" id="dk-gh" target="_blank" hidden>Buka "Add deploy key" di GitHub ↗</a></div>
+<div class="muted" style="margin-top:6px">Repo privat: salin key ini → GitHub repo → <b>Settings → Deploy keys → Add deploy key</b> → tempel → <b>Add key</b>, lalu klik <b>Buat Aplikasi</b>. Repo publik tidak perlu key.</div>
+</div></div>
 <div id="src-upload" style="margin-top:8px"><code>/var/www/&lt;domain&gt;/</code><input name="dir" value="nodeapp" required style="width:160px"></div>
 </td></tr>
 <tr><td class="muted">Perintah start</td><td><input name="start" placeholder="kosongkan = otomatis (npm start / node server.js)" style="min-width:340px;font-family:ui-monospace,monospace">
@@ -58,6 +65,29 @@ function srcSync(){var git=document.querySelector('input[name=src]:checked').val
 document.getElementById('src-git').hidden=!git;document.getElementById('src-upload').hidden=git;document.getElementById('starter').hidden=git;
 document.querySelector('[name=repo]').required=git;}
 srcSync();
+(function(){
+  var f=document.querySelector('[name=repo]').form, t=null, last='';
+  function domain(){var z=f.querySelector('[name=zone]'),s=f.querySelector('[name=sub]'),d=f.querySelector('[name=domain]');
+    if(z&&z.value){var sv=(s.value||'').trim().toLowerCase().replace(/^\.+|\.+$/g,'');return sv?sv+'.'+z.value:z.value;}
+    return (d.value||'').trim().toLowerCase();}
+  function load(){
+    if(document.getElementById('src-git').hidden)return;
+    var d=domain(), repo=f.repo.value.trim(), q=d+'|'+repo; if(q===last)return; last=q;
+    if(!/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(d)){document.getElementById('dk-for').textContent='isi subdomain/domain di atas untuk membuat key';document.getElementById('dk-key').hidden=true;document.getElementById('dk-act').hidden=true;return;}
+    fetch('/node/deploy-key?domain='+encodeURIComponent(d)+'&repo='+encodeURIComponent(repo)).then(function(r){return r.json()}).then(function(j){
+      if(!j.key)return;
+      document.getElementById('dk-for').textContent='untuk '+j.domain;
+      var k=document.getElementById('dk-key');k.textContent=j.key;k.hidden=false;document.getElementById('dk-act').hidden=false;
+      var gh=document.getElementById('dk-gh');gh.hidden=!j.github;if(j.github)gh.href=j.github;});
+  }
+  function later(){clearTimeout(t);t=setTimeout(load,400);}
+  f.addEventListener('input',later);f.addEventListener('change',later);
+  document.getElementById('dk-copy').addEventListener('click',function(){
+    var b=this,k=document.getElementById('dk-key');
+    function sel(){var r=document.createRange();r.selectNodeContents(k);var s=getSelection();s.removeAllRanges();s.addRange(r);try{document.execCommand('copy');b.textContent='Tersalin ✓';}catch(e){b.textContent='Tekan Ctrl+C';}}
+    if(navigator.clipboard)navigator.clipboard.writeText(k.textContent).then(function(){b.textContent='Tersalin ✓';},sel);else sel();
+    setTimeout(function(){b.textContent='📋 Salin key';},2500);});
+})();
 </script>
 {% if busy %}<script>setTimeout(function(){location.reload()},5000);</script>{% endif %}
 {% endblock %}

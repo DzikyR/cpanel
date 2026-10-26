@@ -1132,6 +1132,17 @@ def node_page():
                            cf_on=cf_enabled(), cf_auto=cfg.get("cf_auto", True))
 
 
+@app.get("/node/deploy-key")
+@login_required
+def node_deploy_key():
+    """Deploy key untuk domain yang sedang diketik di form (dibuat bila belum ada)."""
+    domain = request.args.get("domain", "").strip().lower()
+    if not DOMAIN_RE.match(domain):
+        return {"error": "domain belum lengkap"}, 400
+    return {"domain": domain, "key": gitdeploy.ensure_key(domain),
+            "github": gitdeploy.github_keys_url(request.args.get("repo", "").strip())}
+
+
 @app.post("/node/runtime")
 @login_required
 def node_runtime():
@@ -1242,6 +1253,7 @@ def node_detail(domain):
                            pg_on=pgsql.available(), pg_url=pgsql.url(n["pg"]) if n.get("pg") else None,
                            url=site_url(domain), git=cfg.get("git", {}).get(domain),
                            pubkey=gitdeploy.ensure_key(domain), git_running=gitdeploy.is_running(domain),
+                           keys_url=gitdeploy.github_keys_url((cfg.get("git", {}).get(domain) or {}).get("repo")),
                            git_log=gitdeploy.read_log(domain),
                            hook=f"{request.headers.get('X-Forwarded-Proto', request.scheme)}://{request.host}/hook/{domain}",
                            rel_dir=str(app_dir.relative_to(site)) if site in app_dir.parents else n["dir"])
