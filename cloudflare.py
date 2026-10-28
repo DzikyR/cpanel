@@ -262,3 +262,25 @@ class Cloudflare:
         else:
             new = f"v=spf1 include:_spf.mx.cloudflare.net include:{include} ~all"
         self.ensure_txt(domain, new, "v=spf1")
+
+    # ---------- domain (zone) ----------
+    def zone_list(self):
+        """Semua zone yang terjangkau token, termasuk yang belum aktif (menunggu nameserver)."""
+        return [{"id": z["id"], "name": z["name"], "status": z["status"],
+                 "ns": z.get("name_servers") or [], "original_ns": z.get("original_name_servers") or []}
+                for z in self.call("GET", "/zones?per_page=50")]
+
+    def add_zone(self, name):
+        """Tambahkan domain ke akun Cloudflare (paket Free). Kembalikan nameserver yang harus dipasang."""
+        try:
+            z = self.call("POST", "/zones", {"name": name, "account": {"id": self.account_id}, "type": "full"})
+        except CFError as e:
+            if "zone.create" in str(e) or "Authentication" in str(e):
+                raise CFError("Token belum punya izin menambah domain: tambahkan permission "
+                              "Zone · Zone · Edit dengan Zone Resources: All zones from an account")
+            raise
+        return z.get("name_servers") or []
+
+    def check_zone(self, zone_id):
+        """Minta Cloudflare memeriksa ulang nameserver domain yang masih pending."""
+        self.call("PUT", f"/zones/{zone_id}/activation_check")

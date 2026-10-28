@@ -188,18 +188,36 @@ def cloudflare():
             cfg.pop("cf_token", None)
             save_config()
             flash("Token Cloudflare dihapus", "ok")
-        return redirect(url_for("cloudflare"))
+        elif act == "add_zone":
+            name = request.form.get("zone", "").strip().lower().removeprefix("www.").strip(".")
+            if not DOMAIN_RE.match(name):
+                flash("Nama domain tidak valid (contoh: tokoku.com)", "error")
+            else:
+                try:
+                    ns = cf().add_zone(name)
+                    flash(f"{name} ditambahkan ke Cloudflare. Ganti nameserver domain di registrar menjadi: "
+                          + ", ".join(ns) + ". Setelah aktif, domain muncul di semua menu panel.", "ok")
+                except cfapi.CFError as e:
+                    flash(f"Gagal menambah {name}: {e}", "error")
+        elif act == "check_zone":
+            try:
+                cf().check_zone(request.form.get("id", ""))
+                flash("Pemeriksaan nameserver diminta. Status diperbarui dalam beberapa menit (bisa sampai 24 jam).", "ok")
+            except cfapi.CFError as e:
+                flash(f"Cloudflare: {e}", "error")
+        _zones_cache["t"] = 0  # muat ulang daftar domain
+        return redirect(url_for("cloudflare") + ("#domain" if act in ("add_zone", "check_zone") else ""))
     account_id, tunnel_id = cfapi.tunnel_ids()
-    hosts, zones, err = {}, [], None
+    hosts, zones, zone_list, err = {}, [], [], None
     if cf_enabled():
         try:
             c = cf()
-            hosts, zones = c.public_hostnames(), c.verify()
+            hosts, zones, zone_list = c.public_hostnames(), c.verify(), c.zone_list()
         except cfapi.CFError as e:
             err = str(e)
     return render_template("cloudflare.html", account_id=account_id, tunnel_id=tunnel_id,
                            enabled=cf_enabled(), auto=cfg.get("cf_auto", True),
-                           hosts=hosts, zones=zones, err=err)
+                           hosts=hosts, zones=zones, zone_list=zone_list, err=err)
 
 
 # ---------- websites ----------
