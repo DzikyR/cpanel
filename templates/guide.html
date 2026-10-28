@@ -25,7 +25,7 @@
 <a href="#backup"><b>💾 Backup & restore</b><span>cadangan, pindah server</span></a>
 <a href="#cf"><b>☁️ Cloudflare</b><span>token & publikasi</span></a>
 <a href="#maint"><b>⚙️ Services, Logs, Password</b><span>pemeliharaan</span></a>
-<a href="#faq"><b>❓ Masalah umum</b><span>502, 403, upload gagal…</span></a>
+<a href="#faq"><b>❓ Masalah umum</b><span>502, 403, upload gagal, tunnel putus…</span></a>
 </div></div>
 
 <div class="guide">
@@ -192,6 +192,32 @@ Aplikasi yang sudah ada bisa dihubungkan ke GitHub kapan saja dari kartu <b>⎇ 
 <p>Pastikan kolom <b>Publik</b> di menu Website berstatus <b>🌍 Online</b>; bila tidak, klik <b>Publikasikan</b>. Tunggu 1–2 menit.</p>
 <h3>"Aplikasi Node.js sedang tidak berjalan" (502)</h3>
 <p>Buka menu Node.js → aplikasi → <b>Log aplikasi</b>. Penyebab umum: belum <b>npm install</b>, perintah start salah, atau aplikasi tidak memakai <code>process.env.PORT</code>.</p>
+<h3 id="tunnel">Website kadang gagal dimuat, harus di-refresh beberapa kali</h3>
+<p>Bila semua website sesekali tidak bisa dibuka beberapa detik lalu normal lagi, biasanya koneksi <b>Cloudflare Tunnel</b> putus. Penyebab umumnya protokol <b>QUIC (UDP)</b> yang sering diputus jaringan/router. Solusinya: paksa tunnel memakai <b>HTTP/2 (TCP)</b>. Perintah di bawah dijalankan sebagai <b>root</b> di terminal server (SSH atau konsol Proxmox).</p>
+<ol>
+<li><b>Pastikan penyebabnya.</b> Hitung berapa kali koneksi tunnel putus dalam 24 jam terakhir, dan lihat protokol yang sedang dipakai:
+<pre>journalctl -u cloudflared --since "-24h" | grep -c "Connection terminated"
+journalctl -u cloudflared -n 50 | grep -o "protocol=[a-z0-9]*" | sort | uniq -c</pre>
+Angka puluhan disertai pesan <code>timeout: no recent network activity</code> dan <code>protocol=quic</code> berarti tunnel perlu dipindah ke HTTP/2.</li>
+<li><b>Buat pengaturan tambahan (drop-in)</b> agar cloudflared memakai HTTP/2. File layanan aslinya tidak diubah:
+<pre>mkdir -p /etc/systemd/system/cloudflared.service.d
+cat &gt; /etc/systemd/system/cloudflared.service.d/protocol.conf &lt;&lt;'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel --protocol http2 run --token-file /etc/cloudflared/token
+EOF</pre>
+Baris <code>ExecStart=</code> yang kosong wajib ada, karena baris itulah yang menghapus perintah lama sebelum diganti.</li>
+<li><b>Muat ulang lalu restart tunnel.</b> Semua website akan terputus sekitar 5 detik:
+<pre>systemctl daemon-reload
+systemctl restart cloudflared</pre></li>
+<li><b>Periksa hasilnya.</b> Harus muncul 4 baris <code>Registered tunnel connection … protocol=http2</code>:
+<pre>journalctl -u cloudflared --since "-1min" | grep Registered</pre></li>
+<li><b>Pantau</b> sehari kemudian dengan perintah langkah 1. Jumlah "Connection terminated" seharusnya turun drastis.</li>
+</ol>
+<div class="tip"><b>Mengembalikan ke semula</b> (mis. jaringan sudah stabil dan ingin memakai QUIC lagi):
+<code>rm /etc/systemd/system/cloudflared.service.d/protocol.conf &amp;&amp; systemctl daemon-reload &amp;&amp; systemctl restart cloudflared</code></div>
+<div class="warn">Jika tunnel tidak mau tersambung setelah restart, cek pesan error dengan <code>systemctl status cloudflared</code> dan <code>journalctl -u cloudflared -n 30</code>. Pastikan file <code>/etc/cloudflared/token</code> masih ada, lalu periksa apakah ada salah ketik di file <code>protocol.conf</code>.</div>
+<p>Di server ini pengaturan HTTP/2 <b>sudah terpasang</b> (sejak 28 Okt 2026), dan <code>install.sh</code> otomatis memasangnya di server baru.</p>
 <h3>Upload gagal</h3>
 <p>Batas unggahan 512 MB. Untuk berkas lebih besar, pecah ZIP-nya atau gunakan Git Deploy.</p>
 <h3>Email tidak masuk/terkirim</h3>
